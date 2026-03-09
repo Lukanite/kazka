@@ -1,0 +1,212 @@
+# ============================================================
+# Kazka Voice Assistant Configuration — EXAMPLE
+# ============================================================
+# Copy this file to assistant_settings.toml and fill in your
+# API keys and device names. assistant_settings.toml is gitignored.
+#
+# Quick start (OpenAI):
+#   1. cp assistant_settings.example.toml assistant_settings.toml
+#   2. Set your OpenAI key in [network] and [speech_recognition]
+#      and [remote_tts] below, or export environment variables:
+#        LLM_API_KEY=sk-...
+#        REMOTE_API_KEY=sk-...
+#        REMOTE_TTS_KEY=sk-...
+#   3. python main.py --text-only     # no mic/speaker needed
+#      python main.py                 # full voice assistant
+
+[assistant]
+name = "Kazka"
+system_prompt_file = "prompts/system_prompt.txt"
+character_prompt_file = "prompts/character_prompt.txt"
+enable_thinking_mode = false
+max_chat_tokens = 1024
+max_task_tokens = 4096
+
+
+# ============================================================
+# LLM API
+# Default: OpenAI (drop in your key and go).
+# Uncomment an alternate block to switch providers.
+# ============================================================
+
+[network]
+enable_streaming = true
+enable_cache_warming = true    # Warms the KV cache before first inference
+
+# --- Active: OpenAI ---
+api_url = "https://api.openai.com/v1/chat/completions"
+model = "gpt-4o-mini"
+api_key = ""            # Set your OpenAI key here, or use LLM_API_KEY env var
+api_type = "openai"
+
+# --- Swap to: local Ollama ---
+# api_url = "http://localhost:11434/v1/chat/completions"
+# model = "llama3.2"
+# api_key = ""
+# api_type = "openai"
+
+# --- Swap to: local llama.cpp / vLLM / LM Studio ---
+# api_url = "http://localhost:8000/v1/chat/completions"
+# model = "your-model-name"
+# api_key = ""
+# api_type = "openai"
+
+# --- Swap to: Anthropic (direct) ---
+# api_url = "https://api.anthropic.com/v1/messages"
+# model = "claude-sonnet-4-6"
+# api_key = ""            # Set your Anthropic key here, or use LLM_API_KEY env var
+# api_type = "anthropic"
+
+# --- Swap to: OpenRouter (access many models via one key) ---
+# api_url = "https://openrouter.ai/api/v1/chat/completions"
+# model = "openai/gpt-4o-mini"
+# api_key = ""            # Set your OpenRouter key here, or use LLM_API_KEY env var
+# api_type = "openai"
+
+
+[audio_devices]
+input_device_name = "Microphone"    # Partial name match — check with --list-devices
+output_device_name = "Speakers"
+mic_sample_rate = 48000
+sample_rate = 16000
+chunk_size = 1280
+
+
+[wake_word]
+target = "kazka"
+model_file = "models/Kazka.onnx"
+confidence_threshold = 0.5
+vocab_prompt = "Kitsune,Kazka"  # Phonetic context for Whisper; also prevents prompt-echo false verifications
+# Known misheard variants — add more if the wake word is being missed
+phonetic_aliases = ["kamiska"]
+max_levenshtein_distance = 1
+
+
+[tts]
+# Local Piper TTS — used as primary if remote TTS is disabled,
+# or as a fallback if remote TTS synthesis fails.
+enabled = false
+binary_path = "./piper/piper"
+voice_model = "./en_US-kathleen-low.onnx"
+
+
+[hardware]
+compute_type = "int8"   # "int8", "float16", "float32"
+device = "cpu"          # "cpu" or "cuda"
+
+
+# ============================================================
+# Speech Recognition (STT)
+# Default: OpenAI transcription API (same key as [network]).
+# Uncomment an alternate block to switch providers.
+# ============================================================
+
+[speech_recognition]
+verifier_model = "tiny.en"
+scribe_model = "small.en"
+vocab_prompt = ""
+
+# --- Active: remote OpenAI transcription ---
+use_remote_api = true
+remote_api_url = "https://api.openai.com/v1/audio/transcriptions"
+remote_api_key = ""     # Set your OpenAI key here, or use REMOTE_API_KEY env var
+remote_api_model = "gpt-4o-transcribe"
+remote_api_use_multipart = true
+
+# --- Swap to: local Whisper server (e.g. faster-whisper-server) ---
+# use_remote_api = true
+# remote_api_url = "http://localhost:8881/v1/audio/transcriptions"
+# remote_api_key = ""   # Set your OpenAI key here, or use REMOTE_API_KEY env var
+# remote_api_model = "deepdml/faster-whisper-large-v3-turbo-ct2"
+# remote_api_use_multipart = true
+
+# --- Swap to: on-device Whisper (no remote API) ---
+# use_remote_api = false
+
+
+# ============================================================
+# Text-to-Speech (TTS)
+# Default: OpenAI TTS API (same key as [network]).
+# Uncomment an alternate block to switch providers.
+# ============================================================
+
+[remote_tts]
+# --- Active: remote OpenAI TTS ---
+use_remote_tts = true
+remote_api_url = "https://api.openai.com/v1/audio/speech"
+remote_api_key = ""     # Set your OpenAI key here, or use REMOTE_TTS_KEY env var
+remote_tts_model = "gpt-4o-mini-tts"
+remote_tts_voice = "fable"
+remote_tts_format = "wav"
+
+# --- Swap to: local Kokoro TTS server ---
+# use_remote_tts = true
+# remote_api_url = "http://localhost:8880/v1/audio/speech"
+# remote_api_key = ""
+# remote_tts_model = "kokoro"
+# remote_tts_voice = "af_heart"
+# remote_tts_format = "wav"
+
+# --- Swap to: local Piper (uses [tts] section above) ---
+# use_remote_tts = false
+
+
+[memory]
+file_path = "assistant_memories.json"
+prompts_dir = "prompts"
+max_user_facts = 10
+max_self_facts = 10
+max_preferences = 10
+max_events = 10
+max_projects = 10
+max_conversation = 5
+conversation_log_dir = "log"
+memory_backup_dir = "log"
+resume_history_count = 3
+
+
+[console]
+show_thinking = false
+
+
+[sleep]
+enabled = true
+inactivity_minutes = 60
+sleeping_hours_start = 2
+sleeping_hours_end = 6
+min_exchanges = 5
+
+
+[tools]
+enable_tools = true
+disabled_tools = []
+
+# Tool-specific settings live under [tools.tool_settings.<tool_name>]
+# Example: Matter smart home controller
+# [tools.tool_settings.matter]
+# host = "localhost"
+# port = 5580
+#
+# [tools.tool_settings.matter.device_aliases]
+# bathroom = {node_id = 1, endpoint_id = 1}
+# bedroom_globe = {node_id = 2, endpoint_id = 1}
+# bedroom_floor = {node_id = 3, endpoint_id = 1}
+#
+# [tools.tool_settings.matter.groups]#
+# bedroom = ["bedroom_globe", "bedroom_floor"]
+
+
+[vad]
+# Voice Activity Detection configuration
+model_path = "models/silero_vad_v4.onnx"
+silence_threshold = 0.5    # Probability threshold for silence detection (0.0 to 1.0)
+
+
+[conversation_search]
+enabled = false         # Requires models/all-MiniLM-L6-v2.onnx to be present
+model_path = "models/all-MiniLM-L6-v2.onnx"
+tokenizer_path = "models/tokenizer.json"
+index_dir = "search_index"
+top_k = 3
+context_window = 1
+min_score = 0.15

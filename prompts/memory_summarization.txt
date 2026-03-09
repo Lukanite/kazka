@@ -1,0 +1,14 @@
+Compress these conversation memories into 2-4 essential summary points that preserve the most important information.
+
+Memories to summarize:
+{memories_text}
+
+Focus on:
+- Core information that must be retained
+- Key themes and patterns
+- Important decisions or outcomes
+- Significant emotional or personal context
+
+Your response must be ONLY the bullet points. Start each bullet with "•". Do not include any other text or explanation.
+
+Compressed summary:

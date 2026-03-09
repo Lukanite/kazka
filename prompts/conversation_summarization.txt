@@ -1,0 +1,20 @@
+Create a concise 2-4 bullet point summary of this conversation. Focus on information worth remembering for future conversations.
+
+Capture:
+- Important decisions or conclusions reached
+- New information learned about the user
+- Tasks, projects, or events discussed
+- Emotional context or significant moments
+
+AVOID:
+- Generic pleasantries or greetings
+- Minor details not worth remembering
+- Information already stored in existing memories
+- Thinking blocks, reasoning, or meta-commentary
+
+CRITICAL: Your response must contain ONLY the bullet points. No thinking, no reasoning, no explanations. Start each bullet with "•".
+
+Conversation:
+{conversation_text}
+
+Summary:

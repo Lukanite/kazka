@@ -1,0 +1,33 @@
+# Personal config (contains API keys) — copy from assistant_settings.example.toml
+assistant_settings.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Runtime data
+log/
+search_index/
+assistant_memories.json
+
+# Models (large binary files — auto-downloaded on first run)
+models/*.onnx
+!models/Kazka.onnx          # Ship custom wake word model
+models/tokenizer.json
+*.onnx
+
+# Secrets / environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/

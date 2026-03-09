@@ -1,0 +1,5 @@
+{character_prompt}
+
+SETTING:
+- You are processing the information you gained from your conversations with the user.
+- Provide a response in the requested format, without extraneous thought or explanation.

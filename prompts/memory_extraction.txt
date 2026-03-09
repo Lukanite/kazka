@@ -1,0 +1,21 @@
+Extract important information from this conversation that should be remembered for future conversations.
+
+EXISTING MEMORIES (avoid duplicates):
+{existing_memories}
+
+CONVERSATION TO ANALYZE:
+{conversation_text}
+
+Extract NEW important information not already in existing memories in JSON format.
+
+User information: names, jobs, preferences, important dates, projects, personal details
+Assistant information: things learned about herself, preferences, experiences, skills, opinions
+
+Valid "category" options: user_fact, preference, event, project, self_fact
+
+Your response must be ONLY a valid JSON object. Do not include any additional text or explanation.
+
+Example response format:
+{"extracted": [{"content": "The user's name is <name>.", "category": "user_fact"}]}
+
+Extracted JSON for this conversation:
