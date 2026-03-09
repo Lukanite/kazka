@@ -19,6 +19,7 @@ A locally-driven personal Voice Assistant with easily customizeable and modular:
 
 ```bash
 # 1. Run once — Kazka will create assistant_settings.toml for you and exit
+pip3 install -r requirements.txt
 python main.py
 
 # 2. Add your OpenAI key to assistant_settings.toml
