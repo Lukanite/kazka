@@ -19,10 +19,9 @@ search_index/
 assistant_memories.json
 
 # Models (large binary files — auto-downloaded on first run)
-models/*.onnx
-!models/Kazka.onnx          # Ship custom wake word model
 models/tokenizer.json
 *.onnx
+!**/Kazka.onnx              # Ship custom wake word model
 
 # Secrets / environment
 .env
