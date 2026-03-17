@@ -10,5 +10,3 @@ Focus on:
 - Significant emotional or personal context
 
 Your response must be ONLY the bullet points. Start each bullet with "•". Do not include any other text or explanation.
-
-Compressed summary:

@@ -17,5 +17,3 @@ Your response must be ONLY a valid JSON object. Do not include any additional te
 
 Example response format:
 {"extracted": [{"content": "The user's name is <name>.", "category": "user_fact"}]}
-
-Extracted JSON for this conversation:

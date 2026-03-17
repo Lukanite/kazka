@@ -3,13 +3,14 @@ Rank these memories by importance for future conversations.
 Memories to evaluate:
 {memories_text}
 
-Each memory is labeled with a short code (e.g., m1, m2, m3). You MUST return the short codes, not the full content.
+Each memory is labeled with a short code (e.g., m1, m2, m3) and a relative timestamp showing when it was recorded. You MUST return the short codes, not the full content.
 
 Consider importance for relationship continuity and future conversations. Prefer memories that contain:
 - Personal information about the user
 - Important events or decisions
 - Significant preferences or boundaries
 - Recurring themes or topics
+- Recent updates to previously known facts
 
 IMPORTANT: You must include ALL memory codes in your response, ordered by importance (most important first). Return the complete ranking of all {memories_count} memories.
 
@@ -17,5 +18,3 @@ Your response must be ONLY a valid JSON object. Do not include any additional te
 
 Example response format:
 {"ranked": ["m3", "m1", "m2", "m4", "m5"]}
-
-Ranked memory importance for this conversation:

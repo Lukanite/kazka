@@ -354,9 +354,9 @@ class MemoryManager:
             if memory.category in categorized_memories:
                 categorized_memories[memory.category].append(memory)
 
-        # Sort each category by timestamp (newest first)
+        # Sort each category by timestamp (oldest first)
         for category in categorized_memories:
-            categorized_memories[category].sort(key=lambda m: m.timestamp, reverse=True)
+            categorized_memories[category].sort(key=lambda m: m.timestamp)
 
         # Get limits for each category
         limits = {
@@ -456,9 +456,9 @@ class MemoryManager:
                 code_to_id[code] = memory.id
                 memories_with_codes.append((code, memory))
 
-            # Format memories for ranking using short codes
+            # Format memories for ranking using short codes, with relative timestamps
             memories_text = "\n".join([
-                f"{code}: {m.content}"
+                f"{code} [{self._get_relative_time(m.timestamp) or 'today'}]: {m.content}"
                 for code, m in memories_with_codes
             ])
 

@@ -16,5 +16,3 @@ CRITICAL: Your response must contain ONLY the bullet points. No thinking, no rea
 
 Conversation:
 {conversation_text}
-
-Summary:
