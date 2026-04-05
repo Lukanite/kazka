@@ -592,7 +592,8 @@ class AssistantEngine:
             self.conversation_manager.clear_history()
 
             # 3. Reset system prompt to clean base (avoid double-injection)
-            self.llm_interface.system_prompt = config.assistant.get_system_prompt()
+            resume_history = self.memory_manager.get_resume_history(config.memory.resume_history_count)
+            self.llm_interface.system_prompt = config.assistant.get_system_prompt(resume_history=resume_history)
 
             # 4. Re-initialize memory (loads saved memories, injects into prompt)
             self._initialize_memory()
