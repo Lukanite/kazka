@@ -22,6 +22,10 @@ from plugins.inputs.voice.voice_plugin import VoiceInputPlugin
 from plugins.inputs.button.button_plugin import ButtonInputPlugin
 from plugins.inputs.text.text_plugin import TextInputPlugin
 
+# Web plugins
+from plugins.inputs.web.web_plugin import WebInputPlugin
+from plugins.outputs.web_output_plugin import WebOutputPlugin
+
 # Output plugins
 from plugins.outputs.console import ConsoleOutputPlugin
 from plugins.outputs.tts_plugin import TTSOutputPlugin
@@ -71,6 +75,12 @@ Examples:
     )
 
     parser.add_argument(
+        '--no-web',
+        action='store_true',
+        help='Disable web server input/output'
+    )
+
+    parser.add_argument(
         '--text-only',
         action='store_true',
         help='Text-only mode (no voice/TTS/button/LED)'
@@ -89,6 +99,7 @@ def main():
         args.no_button = True
         args.no_tts = True
         args.no_led = True
+        args.no_web = True
 
     print("=" * 60)
     print(f"            {config.assistant.name.upper()} VOICE ASSISTANT")
@@ -121,6 +132,17 @@ def main():
 
     # Set up shutdown callback from text plugin
     text.on_shutdown(lambda: engine.shutdown(save_memories=True))
+
+    # Register web plugins (input + output share the same server instance)
+    if not args.no_web and config.web.enabled:
+        try:
+            web_input = WebInputPlugin(engine)
+            engine.register_input("web", web_input)
+            web_output = WebOutputPlugin(engine, web_input.web_server)
+            engine.register_output("web", web_output)
+        except Exception as e:
+            print(f"   ⚠️  Web plugin failed to load: {e}")
+            print("   Web server disabled.")
 
     # Register output plugins
     console = ConsoleOutputPlugin(engine, {})

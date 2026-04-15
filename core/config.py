@@ -267,6 +267,14 @@ class ConversationSearchConfig:
 
 
 @dataclass
+class WebConfig:
+    """Web server plugin configuration."""
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8000
+
+
+@dataclass
 class ConsoleConfig:
     """Console output plugin configuration."""
     show_thinking: bool = False  # Show LLM thinking/reasoning in console output
@@ -334,6 +342,7 @@ class Config:
         self.speech_recognition = SpeechRecognitionConfig()
         self.remote_tts = RemoteTTSConfig()
         self.memory = MemoryConfig()
+        self.web = WebConfig()
         self.console = ConsoleConfig()
         self.sleep = SleepConfig()
         self.tools = ToolsConfig()
@@ -400,6 +409,8 @@ class Config:
                 self._update_dataclass(self.remote_tts, data['remote_tts'])
             if 'memory' in data:
                 self._update_dataclass(self.memory, data['memory'])
+            if 'web' in data:
+                self._update_dataclass(self.web, data['web'])
             if 'console' in data:
                 self._update_dataclass(self.console, data['console'])
             if 'sleep' in data:
@@ -466,7 +477,7 @@ class Config:
         """Build a TOML string representing the current configuration."""
         a, n, ad, ww = self.assistant, self.network, self.audio_devices, self.wake_word
         t, hw, sr, rt = self.tts, self.hardware, self.speech_recognition, self.remote_tts
-        m, c, sl, to, vad, cs = self.memory, self.console, self.sleep, self.tools, self.vad, self.conversation_search
+        m, c, sl, to, vad, cs, wb = self.memory, self.console, self.sleep, self.tools, self.vad, self.conversation_search, self.web
 
         def v(val):
             return self._toml_value(val)
@@ -542,6 +553,11 @@ class Config:
         lines.append(f'conversation_log_dir = {v(m.conversation_log_dir)}')
         lines.append(f'memory_backup_dir = {v(m.memory_backup_dir)}')
         lines.append(f'resume_history_count = {v(m.resume_history_count)}')
+
+        lines.append("\n[web]")
+        lines.append(f'enabled = {v(wb.enabled)}')
+        lines.append(f'host = {v(wb.host)}')
+        lines.append(f'port = {v(wb.port)}')
 
         lines.append("\n[console]")
         lines.append(f'show_thinking = {v(c.show_thinking)}')
@@ -673,6 +689,7 @@ class Config:
             "speech_recognition": asdict(self.speech_recognition),
             "remote_tts": asdict(self.remote_tts),
             "memory": asdict(self.memory),
+            "web": asdict(self.web),
             "console": asdict(self.console),
             "sleep": asdict(self.sleep),
             "tools": asdict(self.tools),

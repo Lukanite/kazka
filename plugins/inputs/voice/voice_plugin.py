@@ -429,3 +429,5 @@ class VoiceInputPlugin(InputPlugin):
         """
         if self.engine.has_endpoint("led", "set_state"):
             self.engine.endpoint_send("led", "set_state", {'state': self.state})
+        if self.engine.has_endpoint("web", "state_update"):
+            self.engine.endpoint_send("web", "state_update", {'state': self.state})
