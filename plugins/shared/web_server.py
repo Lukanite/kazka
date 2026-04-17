@@ -326,6 +326,12 @@ _HTML = """<!DOCTYPE html>
       ws = new WebSocket(`${proto}://${location.host}/ws`);
 
       ws.onopen = () => {
+        // Clear the log before catch-up replay to avoid duplicates on reconnect
+        log.innerHTML = '';
+        currentMsg = null;
+        lastUserEl = null;
+        if (thinkingEl) { thinkingEl = null; }
+
         setStatus('connected', 'Connected');
         input.disabled = false;
         sendBtn.disabled = false;
@@ -387,6 +393,12 @@ _HTML = """<!DOCTYPE html>
           if (msg.state === 'PROCESSING_VAD' || msg.state === 'PROCESSING_PTT') {
             currentMsg = null;
           }
+
+        } else if (msg.type === 'clear') {
+          log.innerHTML = '';
+          currentMsg = null;
+          lastUserEl = null;
+          if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
 
         } else if (msg.type === 'undo_last') {
           // Remove messages from the end: assistant bubble(s), then user bubble
@@ -539,6 +551,13 @@ class WebServer:
     def set_edit_callback(self, callback: Callable[[str], None]):
         """Register the function called when a client edits the last message."""
         self._edit_callback = callback
+
+    def clear_history(self):
+        """Clear all message history and reset streaming state."""
+        with self._history_lock:
+            self._history.clear()
+            self._last_state = None
+            self._chunk_accumulator = ""
 
     def undo_last_exchange(self):
         """

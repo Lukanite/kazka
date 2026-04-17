@@ -25,6 +25,7 @@ from plugins.inputs.text.text_plugin import TextInputPlugin
 # Web plugins
 from plugins.inputs.web.web_plugin import WebInputPlugin
 from plugins.outputs.web_output_plugin import WebOutputPlugin
+from plugins.services.web_service_plugin import WebServicePlugin
 
 # Output plugins
 from plugins.outputs.console import ConsoleOutputPlugin
@@ -140,6 +141,8 @@ def main():
             engine.register_input("web", web_input)
             web_output = WebOutputPlugin(engine, web_input.web_server)
             engine.register_output("web", web_output)
+            web_service = WebServicePlugin(engine, web_input.web_server)
+            engine.register_service("web_service", web_service)
         except Exception as e:
             print(f"   ⚠️  Web plugin failed to load: {e}")
             print("   Web server disabled.")
