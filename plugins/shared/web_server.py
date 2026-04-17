@@ -373,9 +373,10 @@ _HTML = """<!DOCTYPE html>
           if (!thinkingEl) {
             thinkingEl = document.createElement('div');
             thinkingEl.className = 'msg thinking';
+            thinkingEl.textContent = '💭 ';
             log.appendChild(thinkingEl);
           }
-          thinkingEl.textContent = '💭 ' + msg.text;
+          thinkingEl.textContent += msg.text;
           log.scrollTop = log.scrollHeight;
 
         } else if (msg.type === 'state') {
@@ -462,7 +463,8 @@ class WebServer:
         # Stores only replayable messages (final chunks + last state).
         self._history: Deque[dict] = deque(maxlen=self._HISTORY_MAX)
         self._last_state: Optional[dict] = None  # Only the most recent state matters
-        self._chunk_accumulator: str = ""  # Accumulates streaming tokens for history
+        self._chunk_accumulator: str = ""    # Accumulates streaming content tokens for history
+        self._thinking_accumulator: str = "" # Accumulates streaming thinking tokens for history
         self._history_lock = threading.Lock()
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -558,6 +560,7 @@ class WebServer:
             self._history.clear()
             self._last_state = None
             self._chunk_accumulator = ""
+            self._thinking_accumulator = ""
 
     def undo_last_exchange(self):
         """
@@ -572,6 +575,7 @@ class WebServer:
                 self._history.pop()
             # Reset accumulator in case an edit arrives mid-stream
             self._chunk_accumulator = ""
+            self._thinking_accumulator = ""
 
         self.broadcast({"type": "undo_last"})
 
@@ -620,9 +624,17 @@ class WebServer:
         # so late joiners still get a full catch-up.
         msg_type = message.get("type")
         with self._history_lock:
-            if msg_type == "chunk":
+            if msg_type == "thinking":
+                self._thinking_accumulator += message.get("text", "")
+            elif msg_type == "chunk":
+                # Flush any accumulated thinking to history before the content lands
+                if self._thinking_accumulator:
+                    self._history.append({
+                        "type": "thinking",
+                        "text": self._thinking_accumulator,
+                    })
+                    self._thinking_accumulator = ""
                 if message.get("is_final"):
-                    # Store the full accumulated text as a single final chunk
                     full_text = self._chunk_accumulator + message.get("text", "")
                     self._history.append({
                         "type": "chunk",
@@ -631,6 +643,7 @@ class WebServer:
                         "source": message.get("source", "UNKNOWN"),
                     })
                     self._chunk_accumulator = ""
+                    self._thinking_accumulator = ""
                 else:
                     self._chunk_accumulator += message.get("text", "")
             elif msg_type == "state":
