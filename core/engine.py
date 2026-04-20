@@ -633,6 +633,7 @@ class AssistantEngine:
             self.memory_manager.conversation_log.pop()
 
         print("Last turn undone.")
+        self._notify_service_plugins("on_undo")
 
     def _notify_service_plugins(self, event_name: str):
         """

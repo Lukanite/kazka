@@ -45,9 +45,8 @@ class WebInputPlugin(InputPlugin):
 
     def _on_edit_last(self, text: str):
         """Called by the WebServer when a client edits their last message."""
-        # 1. Remove old exchange from history + notify all clients
-        self.web_server.undo_last_exchange()
-        # 2. Undo the turn in the engine's conversation history
+        # Undo the turn — engine will fire on_undo, which calls undo_last_exchange()
+        # to clean up web history and notify all clients.
         self.engine.undo_turn()
-        # 3. Submit the edited text as new input
+        # Submit the edited text as new input
         self.emit_input(text, {"source": "WEB"})

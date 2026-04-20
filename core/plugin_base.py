@@ -446,3 +446,11 @@ class ServicePlugin(ABC):
         Override to reset state after sleep. Default: no-op.
         """
         pass
+
+    def on_undo(self):
+        """
+        Called on the engine thread after a turn is successfully undone.
+
+        Override to react to undo events (e.g. sync UI state). Default: no-op.
+        """
+        pass

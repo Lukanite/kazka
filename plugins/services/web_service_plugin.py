@@ -31,3 +31,7 @@ class WebServicePlugin(ServicePlugin):
         """Clear conversation history and notify all clients after a sleep cycle."""
         self._server.clear_history()
         self._server.broadcast({"type": "clear"})
+
+    def on_undo(self):
+        """Remove the last exchange from history and notify all clients."""
+        self._server.undo_last_exchange()
