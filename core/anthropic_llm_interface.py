@@ -606,7 +606,34 @@ class AnthropicConversationManager(ConversationManager):
         """
         super().__init__(llm_interface)
 
-    def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False):
+    def add_message(self, role: str, content: str, images: Optional[list] = None):
+        """
+        Add a message in Anthropic content block format.
+
+        Args:
+            role: Message role ('user' or 'assistant')
+            content: Message content text
+            images: Optional list of image dicts for vision queries.
+                    Each dict: {"type": "base64", "data": "...", "media_type": "image/jpeg"}
+        """
+        if images:
+            content_blocks = []
+            if content:
+                content_blocks.append({"type": "text", "text": content})
+            for img in images:
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": img.get("media_type", "image/jpeg"),
+                        "data": img["data"]
+                    }
+                })
+            self.conversation_history.append({"role": role, "content": content_blocks})
+        else:
+            self.conversation_history.append({"role": role, "content": content})
+
+    def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False, images: Optional[list] = None):
         """
         Query method with automatic tool call chaining.
 
@@ -618,6 +645,7 @@ class AnthropicConversationManager(ConversationManager):
             user_message: User's message (use empty string for system-initiated queries)
             tool_manager: Optional ToolManager instance for tool execution
             streaming: If True, streams content chunks. If False, yields complete responses.
+            images: Optional list of image dicts for vision queries
 
         Yields:
             ResponseEvent subclasses
@@ -628,8 +656,8 @@ class AnthropicConversationManager(ConversationManager):
                 tools = tool_manager.get_openai_tools()
 
             # Add user message once at the start
-            if user_message:
-                self.add_message("user", user_message)
+            if user_message or images:
+                self.add_message("user", user_message, images=images)
 
             current_message = None  # Anthropic uses history only (no separate current message)
 

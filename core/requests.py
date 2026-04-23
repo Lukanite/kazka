@@ -7,7 +7,7 @@ enabling thread-safe operation without locks.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional, Dict, Callable
+from typing import Any, List, Optional, Dict, Callable
 from queue import Queue
 import time
 import uuid
@@ -59,10 +59,11 @@ class ProcessInputRequest(EngineRequest):
     """
     text: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    images: List[Dict[str, Any]] = field(default_factory=list)
 
     def execute(self, engine: 'AssistantEngine') -> None:
         """Process user input through LLM pipeline."""
-        engine._process_input_internal(self.text, self.metadata)
+        engine._process_input_internal(self.text, self.metadata, self.images)
         return None  # No return value for input processing
 
 

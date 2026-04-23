@@ -312,7 +312,8 @@ class TextInputPlugin(InputPlugin):
             role = msg.get("role", "?")
             content = msg.get("content", "")
             # Truncate long messages for readability
-            preview = content[:200] + "..." if len(str(content)) > 200 else content
+            content_str = str(content) if isinstance(content, list) else content
+            preview = content_str[:200] + "..." if len(content_str) > 200 else content_str
             print(f"  [{i}] {role}: {preview}")
 
         # Tools

@@ -569,17 +569,32 @@ class ConversationManager:
         self.llm_interface = llm_interface
         self.conversation_history: List[Dict] = []
 
-    def add_message(self, role: str, content: str):
+    def add_message(self, role: str, content: str, images: Optional[list] = None):
         """
         Add a message to the conversation history.
 
         Args:
             role: Message role ('user' or 'assistant')
             content: Message content
+            images: Optional list of image dicts for vision queries.
+                    Each dict: {"type": "base64", "data": "...", "media_type": "image/jpeg"}
         """
-        self.conversation_history.append({"role": role, "content": content})
+        if images:
+            content_blocks = []
+            if content:
+                content_blocks.append({"type": "text", "text": content})
+            for img in images:
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{img.get('media_type', 'image/jpeg')};base64,{img['data']}"
+                    }
+                })
+            self.conversation_history.append({"role": role, "content": content_blocks})
+        else:
+            self.conversation_history.append({"role": role, "content": content})
 
-    def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False):
+    def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False, images: Optional[list] = None):
         """
         Unified query method with automatic tool call chaining.
 
@@ -597,6 +612,7 @@ class ConversationManager:
             user_message: User's message (use empty string for system-initiated queries)
             tool_manager: Optional ToolManager instance for tool execution
             streaming: If True, streams content chunks. If False, yields complete responses.
+            images: Optional list of image dicts for vision queries
 
         Yields:
             ResponseEvent subclasses
@@ -607,10 +623,13 @@ class ConversationManager:
                 tools = tool_manager.get_openai_tools()
 
             # Add user message once at the start
-            if user_message:
-                self.add_message("user", user_message)
+            if user_message or images:
+                self.add_message("user", user_message, images=images)
 
-            current_message = user_message
+            # When images are attached, the message is already in history as
+            # content blocks — don't pass current_message or _build_query_payload
+            # would re-add it as plain text without the images.
+            current_message = None if images else user_message
 
             # Keep looping until we get a final text response (no more tool calls)
             while True:
@@ -766,11 +785,19 @@ class ConversationManager:
 
         for i in range(len(self.conversation_history) - 1, -1, -1):
             msg = self.conversation_history[i]
-            if msg["role"] == "user" and isinstance(msg.get("content"), str):
+            if msg["role"] == "user" and not self._is_tool_result(msg):
                 del self.conversation_history[i:]
                 return True
 
         return False
+
+    @staticmethod
+    def _is_tool_result(msg: dict) -> bool:
+        """Check if a message is an Anthropic tool_result (not a real user turn)."""
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return False
+        return any(block.get("type") == "tool_result" for block in content)
 
     def clear_history(self):
         """Clear the conversation history."""

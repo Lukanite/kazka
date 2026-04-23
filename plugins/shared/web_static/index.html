@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kazka</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div id="status-dot"></div>
+    <span id="status-text">Connecting&hellip;</span>
+  </header>
+  <div id="log"></div>
+  <div id="preview-strip"></div>
+  <footer>
+    <button id="attach" title="Attach image" disabled>&plus;</button>
+    <input type="file" id="file-input" accept="image/*" multiple hidden />
+    <input id="input" type="text" placeholder="Message Kazka&hellip;" disabled />
+    <button id="send" disabled>Send</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

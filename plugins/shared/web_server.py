@@ -16,429 +16,17 @@ import json
 import logging
 import threading
 from collections import deque
+from pathlib import Path
 from typing import Callable, Deque, Optional, Set
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 # Suppress uvicorn's access log noise
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-# ---------------------------------------------------------------------------
-# Minimal single-page UI served at GET /
-# ---------------------------------------------------------------------------
-
-_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kazka</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, sans-serif;
-      background: #0f0f0f;
-      color: #e0e0e0;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    header {
-      padding: 12px 20px;
-      background: #1a1a1a;
-      border-bottom: 1px solid #2a2a2a;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    #status-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: #555;
-      flex-shrink: 0;
-      transition: background 0.3s;
-    }
-    #status-dot.connected   { background: #4caf50; }
-    #status-dot.listening   { background: #2196f3; }
-    #status-dot.processing  { background: #ff9800; animation: pulse 1s infinite; }
-    #status-dot.speaking    { background: #9c27b0; animation: pulse 1s infinite; }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
-    }
-    #status-text { font-size: 0.8rem; color: #888; }
-    #log {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .msg {
-      max-width: 80%;
-      padding: 10px 14px;
-      border-radius: 12px;
-      line-height: 1.5;
-      font-size: 0.95rem;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .msg.user {
-      align-self: flex-end;
-      background: #1e3a5f;
-      color: #cde;
-    }
-    .msg.user.editable {
-      cursor: pointer;
-      position: relative;
-    }
-    .msg.user.editable:hover {
-      background: #254f80;
-    }
-    .msg.user.editable::after {
-      content: '✎';
-      position: absolute;
-      top: 4px;
-      right: 8px;
-      font-size: 0.7rem;
-      opacity: 0;
-      transition: opacity 0.2s;
-    }
-    .msg.user.editable:hover::after {
-      opacity: 0.6;
-    }
-    .msg.user.editing {
-      background: #1e3a5f;
-      padding: 6px;
-      max-width: 80%;
-      min-width: min(400px, 80%);
-    }
-    .edit-area {
-      width: 100%;
-      min-width: 0;
-      background: #0f2a4a;
-      border: 1px solid #3a6a9f;
-      border-radius: 6px;
-      padding: 8px 10px;
-      color: #cde;
-      font-family: inherit;
-      font-size: 0.95rem;
-      resize: none;
-      outline: none;
-      line-height: 1.5;
-    }
-    .edit-buttons {
-      display: flex;
-      gap: 6px;
-      margin-top: 6px;
-      justify-content: flex-end;
-    }
-    .edit-buttons button {
-      border: none;
-      border-radius: 6px;
-      padding: 4px 12px;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-    .edit-buttons .save { background: #2a7a4a; color: #cec; }
-    .edit-buttons .save:hover { background: #35955a; }
-    .edit-buttons .discard { background: #3a3a3a; color: #aaa; }
-    .edit-buttons .discard:hover { background: #4a4a4a; }
-    .msg.assistant {
-      align-self: flex-start;
-      background: #1e1e1e;
-      border: 1px solid #2a2a2a;
-    }
-    .msg.assistant .label {
-      font-size: 0.7rem;
-      color: #666;
-      margin-bottom: 4px;
-    }
-    .msg.thinking {
-      align-self: flex-start;
-      background: transparent;
-      border: none;
-      color: #555;
-      font-style: italic;
-      font-size: 0.85rem;
-      padding: 2px 4px;
-    }
-    .msg.error {
-      align-self: flex-start;
-      background: #3a1a1a;
-      border: 1px solid #6a2a2a;
-      color: #f88;
-    }
-    footer {
-      padding: 12px 20px;
-      background: #1a1a1a;
-      border-top: 1px solid #2a2a2a;
-      display: flex;
-      gap: 10px;
-    }
-    #input {
-      flex: 1;
-      background: #2a2a2a;
-      border: 1px solid #3a3a3a;
-      border-radius: 8px;
-      padding: 10px 14px;
-      color: #e0e0e0;
-      font-size: 0.95rem;
-      outline: none;
-    }
-    #input:focus { border-color: #555; }
-    #send {
-      background: #1e3a5f;
-      color: #cde;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 18px;
-      cursor: pointer;
-      font-size: 0.95rem;
-    }
-    #send:hover { background: #254f80; }
-    #send:disabled { opacity: 0.4; cursor: not-allowed; }
-  </style>
-</head>
-<body>
-  <header>
-    <div id="status-dot"></div>
-    <span id="status-text">Connecting…</span>
-  </header>
-  <div id="log"></div>
-  <footer>
-    <input id="input" type="text" placeholder="Message Kazka…" disabled />
-    <button id="send" disabled>Send</button>
-  </footer>
-
-  <script>
-    const log      = document.getElementById('log');
-    const input    = document.getElementById('input');
-    const sendBtn  = document.getElementById('send');
-    const dot      = document.getElementById('status-dot');
-    const statusTx = document.getElementById('status-text');
-
-    let ws;
-    let currentMsg = null;   // streaming assistant bubble
-    let lastUserEl = null;   // last user bubble (editable)
-    let reconnectDelay = 1000;
-
-    function setStatus(cls, text) {
-      dot.className = cls;
-      statusTx.textContent = text;
-    }
-
-    function appendUser(text) {
-      // Remove editable status from previous user bubble
-      if (lastUserEl) lastUserEl.classList.remove('editable');
-
-      const el = document.createElement('div');
-      el.className = 'msg user editable';
-      el.textContent = text;
-      el.addEventListener('click', () => startEdit(el));
-      log.appendChild(el);
-      log.scrollTop = log.scrollHeight;
-      lastUserEl = el;
-    }
-
-    function startEdit(el) {
-      if (!el.classList.contains('editable')) return;
-      if (el.classList.contains('editing')) return;
-
-      const originalText = el.textContent;
-      el.classList.remove('editable');
-      el.classList.add('editing');
-      el.textContent = '';
-
-      const textarea = document.createElement('textarea');
-      textarea.className = 'edit-area';
-      textarea.value = originalText;
-      textarea.rows = Math.max(1, Math.ceil(originalText.length / 50));
-
-      const buttons = document.createElement('div');
-      buttons.className = 'edit-buttons';
-      const saveBtn = document.createElement('button');
-      saveBtn.className = 'save';
-      saveBtn.textContent = 'Send';
-      const discardBtn = document.createElement('button');
-      discardBtn.className = 'discard';
-      discardBtn.textContent = 'Cancel';
-      buttons.appendChild(discardBtn);
-      buttons.appendChild(saveBtn);
-
-      el.appendChild(textarea);
-      el.appendChild(buttons);
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-
-      function finishEdit(submit) {
-        const newText = textarea.value.trim();
-
-        if (submit && newText) {
-          // Server will broadcast undo_last (removing this bubble)
-          // followed by user_input (re-rendering the new text).
-          ws.send(JSON.stringify({ type: 'edit_last', text: newText }));
-        } else {
-          // Cancel — restore the original bubble
-          el.textContent = originalText;
-          el.classList.remove('editing');
-          el.classList.add('editable');
-        }
-      }
-
-      saveBtn.addEventListener('click', (e) => { e.stopPropagation(); finishEdit(true); });
-      discardBtn.addEventListener('click', (e) => { e.stopPropagation(); finishEdit(false); });
-      textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(true); }
-        if (e.key === 'Escape') finishEdit(false);
-        e.stopPropagation();
-      });
-    }
-
-    function startAssistantBubble(source) {
-      currentMsg = document.createElement('div');
-      currentMsg.className = 'msg assistant';
-      const label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = source ? `Kazka [${source}]` : 'Kazka';
-      const body = document.createElement('span');
-      body.className = 'body';
-      currentMsg.appendChild(label);
-      currentMsg.appendChild(body);
-      log.appendChild(currentMsg);
-      return body;
-    }
-
-    function appendError(text) {
-      const el = document.createElement('div');
-      el.className = 'msg error';
-      el.textContent = text;
-      log.appendChild(el);
-      log.scrollTop = log.scrollHeight;
-    }
-
-    let thinkingEl = null;
-
-    function connect() {
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
-
-      ws.onopen = () => {
-        // Clear the log before catch-up replay to avoid duplicates on reconnect
-        log.innerHTML = '';
-        currentMsg = null;
-        lastUserEl = null;
-        if (thinkingEl) { thinkingEl = null; }
-
-        setStatus('connected', 'Connected');
-        input.disabled = false;
-        sendBtn.disabled = false;
-        input.focus();
-        reconnectDelay = 1000;
-      };
-
-      ws.onclose = () => {
-        setStatus('', 'Disconnected — reconnecting…');
-        input.disabled = true;
-        sendBtn.disabled = true;
-        currentMsg = null;
-        setTimeout(connect, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, 15000);
-      };
-
-      ws.onerror = () => ws.close();
-
-      ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-
-        if (msg.type === 'user_input') {
-          appendUser(msg.text);
-
-        } else if (msg.type === 'chunk') {
-          // Remove any lingering thinking bubble
-          if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-
-          if (!currentMsg) {
-            const body = startAssistantBubble(msg.source);
-            currentMsg._body = body;
-          }
-          const body = currentMsg._body || currentMsg.querySelector('.body');
-          body.textContent += msg.text;
-          if (msg.is_final) { currentMsg = null; }
-          log.scrollTop = log.scrollHeight;
-
-        } else if (msg.type === 'thinking') {
-          if (!thinkingEl) {
-            thinkingEl = document.createElement('div');
-            thinkingEl.className = 'msg thinking';
-            thinkingEl.textContent = '💭 ';
-            log.appendChild(thinkingEl);
-          }
-          thinkingEl.textContent += msg.text;
-          log.scrollTop = log.scrollHeight;
-
-        } else if (msg.type === 'state') {
-          const stateMap = {
-            LISTENING: ['listening', 'Listening…'],
-            PROCESSING_VAD: ['processing', 'Processing…'],
-            PROCESSING_PTT: ['processing', 'Processing…'],
-            VERIFYING: ['listening', 'Verifying…'],
-            SPEAKING: ['speaking', 'Speaking…'],
-            WAITING: ['connected', 'Ready'],
-          };
-          const [cls, text] = stateMap[msg.state] || ['connected', msg.state];
-          setStatus(cls, text);
-          // A new state means a new response is coming — close any open bubble
-          if (msg.state === 'PROCESSING_VAD' || msg.state === 'PROCESSING_PTT') {
-            currentMsg = null;
-          }
-
-        } else if (msg.type === 'clear') {
-          log.innerHTML = '';
-          currentMsg = null;
-          lastUserEl = null;
-          if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-
-        } else if (msg.type === 'undo_last') {
-          // Remove messages from the end: assistant bubble(s), then user bubble
-          while (log.lastChild && !log.lastChild.classList.contains('user')) {
-            log.removeChild(log.lastChild);
-          }
-          if (log.lastChild && log.lastChild.classList.contains('user')) {
-            log.removeChild(log.lastChild);
-          }
-          currentMsg = null;
-          if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-          // Update lastUserEl to the new last user bubble
-          const userMsgs = log.querySelectorAll('.msg.user');
-          lastUserEl = userMsgs.length ? userMsgs[userMsgs.length - 1] : null;
-          if (lastUserEl) lastUserEl.classList.add('editable');
-
-        } else if (msg.type === 'error') {
-          appendError('Error: ' + msg.message);
-        }
-      };
-    }
-
-    function send() {
-      const text = input.value.trim();
-      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: 'text_input', text }));
-      appendUser(text);
-      input.value = '';
-      currentMsg = null;  // next assistant message is a fresh bubble
-    }
-
-    sendBtn.addEventListener('click', send);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-
-    connect();
-  </script>
-</body>
-</html>
-"""
+_STATIC_DIR = Path(__file__).parent / "web_static"
 
 
 class WebServer:
@@ -474,6 +62,7 @@ class WebServer:
 
         self.app = FastAPI(docs_url=None, redoc_url=None)
         self._register_routes()
+        self.app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
 
     # ------------------------------------------------------------------
     # Route registration
@@ -481,10 +70,6 @@ class WebServer:
 
     def _register_routes(self):
         app = self.app
-
-        @app.get("/", response_class=HTMLResponse)
-        async def index():
-            return HTMLResponse(content=_HTML)
 
         @app.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket):
@@ -516,16 +101,20 @@ class WebServer:
 
                     if msg_type == "text_input":
                         text = msg.get("text", "").strip()
-                        if text:
+                        images = msg.get("images", [])
+                        if text or images:
                             # Record user message in history for catch-up
                             user_msg = {"type": "user_input", "text": text}
+                            if images:
+                                user_msg["images"] = images
                             with self._history_lock:
                                 self._history.append(user_msg)
                             if self._input_callback:
-                                self._input_callback(text)
+                                self._input_callback(text, images or None)
 
                     elif msg_type == "edit_last":
                         text = msg.get("text", "").strip()
+                        images = msg.get("images", [])
                         if text and self._edit_callback:
                             # Clean up history + notify clients synchronously,
                             # before the engine queues async undo/input requests.
@@ -533,11 +122,13 @@ class WebServer:
                             self._edit_undo_pending = True
                             # Record + broadcast the new user message
                             user_msg = {"type": "user_input", "text": text}
+                            if images:
+                                user_msg["images"] = images
                             with self._history_lock:
                                 self._history.append(user_msg)
                             self.broadcast(user_msg)
                             # Queue engine undo + re-submit (async)
-                            self._edit_callback(text)
+                            self._edit_callback(text, images or None)
 
             except WebSocketDisconnect:
                 pass

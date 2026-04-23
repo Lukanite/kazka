@@ -39,14 +39,14 @@ class WebInputPlugin(InputPlugin):
         self.web_server.stop()
         print("🛑 Web input plugin stopped")
 
-    def _on_text_received(self, text: str):
+    def _on_text_received(self, text: str, images: list = None):
         """Called by the WebServer when a client sends a text_input message."""
-        self.emit_input(text, {"source": "WEB"})
+        self.emit_input(text, {"source": "WEB"}, images=images)
 
-    def _on_edit_last(self, text: str):
+    def _on_edit_last(self, text: str, images: list = None):
         """Called by the WebServer when a client edits their last message."""
         # Undo the turn — engine will fire on_undo, which calls undo_last_exchange()
         # to clean up web history and notify all clients.
         self.engine.undo_turn()
         # Submit the edited text as new input
-        self.emit_input(text, {"source": "WEB"})
+        self.emit_input(text, {"source": "WEB"}, images=images)

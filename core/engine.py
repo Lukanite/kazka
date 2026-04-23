@@ -91,7 +91,7 @@ class AssistantEngine:
     # Public API (Thread-Safe - Submit Requests to Queue)
     # =========================================================================
 
-    def process_input(self, text: str, metadata: Optional[Dict] = None):
+    def process_input(self, text: str, metadata: Optional[Dict] = None, images: Optional[list] = None):
         """
         Submit user input for processing (async).
         Thread-safe - can be called from any thread.
@@ -99,11 +99,12 @@ class AssistantEngine:
         Args:
             text: User input text
             metadata: Context about the input (source, confidence, etc.)
+            images: Optional list of image dicts for vision queries
         """
         if metadata is None:
             metadata = {}
 
-        request = ProcessInputRequest(text=text, metadata=metadata)
+        request = ProcessInputRequest(text=text, metadata=metadata, images=images or [])
         self.request_queue.put(request)
 
     def undo_turn(self):
@@ -352,7 +353,7 @@ class AssistantEngine:
             traceback.print_exc()
             return None
 
-    def _process_input_internal(self, text: str, metadata: Dict):
+    def _process_input_internal(self, text: str, metadata: Dict, images: Optional[list] = None):
         """
         Process user input through LLM (internal - called by engine thread only).
 
@@ -362,6 +363,7 @@ class AssistantEngine:
         Args:
             text: User input text
             metadata: Input metadata
+            images: Optional list of image dicts for vision queries
         """
         # Notify service plugins that an interaction is starting
         self._notify_service_plugins("on_interaction_start")
@@ -371,9 +373,9 @@ class AssistantEngine:
             use_streaming = getattr(config.network, 'enable_streaming', False)
 
             if use_streaming:
-                self._process_input_streaming(text, metadata)
+                self._process_input_streaming(text, metadata, images)
             else:
-                self._process_input_non_streaming(text, metadata)
+                self._process_input_non_streaming(text, metadata, images)
 
         except Exception as e:
             print(f"❌ LLM query error: {e}")
@@ -384,13 +386,14 @@ class AssistantEngine:
                 metadata
             )
 
-    def _process_input_non_streaming(self, text: str, metadata: Dict):
+    def _process_input_non_streaming(self, text: str, metadata: Dict, images: Optional[list] = None):
         """
         Process input with non-streaming LLM responses (original behavior).
 
         Args:
             text: User input text
             metadata: Input metadata
+            images: Optional list of image dicts for vision queries
         """
         from core.llm_interface import ContentChunk, ThinkingChunk
 
@@ -398,7 +401,7 @@ class AssistantEngine:
         all_content = []
 
         # Query LLM with tools (yields ResponseEvent objects)
-        for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=False):
+        for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=False, images=images):
             # Broadcast thinking events unconditionally, plugins decide
             if isinstance(event, ThinkingChunk) and event.content:
                 thinking_metadata = {**metadata, 'is_thinking': True}
@@ -416,13 +419,14 @@ class AssistantEngine:
         # Notify service plugins that interaction is complete
         self._notify_service_plugins("on_interaction_end")
 
-    def _process_input_streaming(self, text: str, metadata: Dict):
+    def _process_input_streaming(self, text: str, metadata: Dict, images: Optional[list] = None):
         """
         Process input with streaming LLM responses for real-time output.
 
         Args:
             text: User input text
             metadata: Input metadata
+            images: Optional list of image dicts for vision queries
         """
         from core.llm_interface import ContentChunk, ThinkingChunk, Complete
 
@@ -430,7 +434,7 @@ class AssistantEngine:
         full_response = ""
 
         # Query LLM with streaming (yields ResponseEvent objects)
-        for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=True):
+        for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=True, images=images):
             # Process ThinkingChunk events - broadcast unconditionally, plugins decide
             if isinstance(event, ThinkingChunk):
                 thinking_metadata = {**metadata, 'is_thinking': True}

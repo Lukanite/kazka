@@ -56,7 +56,7 @@ class InputPlugin(ABC):
         """
         pass
 
-    def emit_input(self, text: str, metadata: Optional[Dict[str, Any]] = None):
+    def emit_input(self, text: str, metadata: Optional[Dict[str, Any]] = None, images: Optional[list] = None):
         """
         Submit user input to the engine (thread-safe).
 
@@ -66,6 +66,7 @@ class InputPlugin(ABC):
         Args:
             text: User input text
             metadata: Context about the input (source, confidence, etc.)
+            images: Optional list of image dicts for vision queries
         """
         if metadata is None:
             metadata = {}
@@ -74,7 +75,7 @@ class InputPlugin(ABC):
         metadata['plugin'] = self.name
 
         # Submit to engine queue (thread-safe)
-        self.engine.process_input(text, metadata)
+        self.engine.process_input(text, metadata, images)
 
     def print(self, *args, lock: bool = True, **kwargs):
         """
