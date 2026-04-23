@@ -34,4 +34,9 @@ class WebServicePlugin(ServicePlugin):
 
     def on_undo(self):
         """Remove the last exchange from history and notify all clients."""
+        # If the undo was triggered by a web edit, the edit handler already
+        # cleaned up history and notified clients synchronously. Skip to
+        # avoid double-undo.
+        if self._server.consume_edit_undo_pending():
+            return
         self._server.undo_last_exchange()

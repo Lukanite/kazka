@@ -458,6 +458,7 @@ class WebServer:
         self._clients_lock = threading.Lock()
         self._input_callback: Optional[Callable[[str], None]] = None
         self._edit_callback: Optional[Callable[[str], None]] = None
+        self._edit_undo_pending = False  # Flag to prevent double-undo from edit path
 
         # Catch-up history for late-joining clients.
         # Stores only replayable messages (final chunks + last state).
@@ -526,15 +527,17 @@ class WebServer:
                     elif msg_type == "edit_last":
                         text = msg.get("text", "").strip()
                         if text and self._edit_callback:
-                            # Callback undoes old exchange (broadcasts undo_last),
-                            # then re-submits the edited text to the engine.
-                            self._edit_callback(text)
-                            # Record + broadcast the new user message so all
-                            # clients render it after the undo clears the old one.
+                            # Clean up history + notify clients synchronously,
+                            # before the engine queues async undo/input requests.
+                            self.undo_last_exchange()
+                            self._edit_undo_pending = True
+                            # Record + broadcast the new user message
                             user_msg = {"type": "user_input", "text": text}
                             with self._history_lock:
                                 self._history.append(user_msg)
                             self.broadcast(user_msg)
+                            # Queue engine undo + re-submit (async)
+                            self._edit_callback(text)
 
             except WebSocketDisconnect:
                 pass
@@ -561,6 +564,13 @@ class WebServer:
             self._last_state = None
             self._chunk_accumulator = ""
             self._thinking_accumulator = ""
+
+    def consume_edit_undo_pending(self) -> bool:
+        """Check and clear the edit-undo flag. Returns True if an edit already handled the undo."""
+        if self._edit_undo_pending:
+            self._edit_undo_pending = False
+            return True
+        return False
 
     def undo_last_exchange(self):
         """
