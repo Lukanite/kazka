@@ -77,10 +77,86 @@ function startEdit(el) {
   el.classList.add('editing');
   el.innerHTML = '';
 
+  // Editable image strip
+  const editImgStrip = document.createElement('div');
+  editImgStrip.className = 'edit-images';
+
+  function rebuildEditImages() {
+    editImgStrip.innerHTML = '';
+    editImages.forEach((entry, i) => {
+      const item = document.createElement('div');
+      item.className = 'preview-item';
+      const img = document.createElement('img');
+      img.src = 'data:' + entry.media_type + ';base64,' + entry.data;
+      img.alt = entry.name || 'image';
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove';
+      removeBtn.textContent = '\u00D7';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editImages.splice(i, 1);
+        rebuildEditImages();
+      });
+      item.appendChild(img);
+      item.appendChild(removeBtn);
+      editImgStrip.appendChild(item);
+    });
+    // Add-image button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-img';
+    addBtn.textContent = '+';
+    addBtn.title = 'Add image';
+    const editFileInput = document.createElement('input');
+    editFileInput.type = 'file';
+    editFileInput.accept = 'image/*';
+    editFileInput.multiple = true;
+    editFileInput.hidden = true;
+    addBtn.addEventListener('click', (e) => { e.stopPropagation(); editFileInput.click(); });
+    editFileInput.addEventListener('change', () => {
+      for (const file of editFileInput.files) {
+        if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_SIZE) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const [header, data] = reader.result.split(',', 2);
+          const media_type = header.split(':')[1].split(';')[0];
+          editImages.push({ data, media_type, name: file.name });
+          rebuildEditImages();
+        };
+        reader.readAsDataURL(file);
+      }
+      editFileInput.value = '';
+    });
+    editImgStrip.appendChild(addBtn);
+    editImgStrip.appendChild(editFileInput);
+  }
+
+  rebuildEditImages();
+
   const textarea = document.createElement('textarea');
   textarea.className = 'edit-area';
   textarea.value = originalText;
   textarea.rows = Math.max(1, Math.ceil(originalText.length / 50));
+
+  // Paste images into the edit textarea
+  textarea.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file || file.size > MAX_IMAGE_SIZE) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const [header, data] = reader.result.split(',', 2);
+          const media_type = header.split(':')[1].split(';')[0];
+          editImages.push({ data, media_type, name: file.name || 'pasted' });
+          rebuildEditImages();
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  });
 
   const buttons = document.createElement('div');
   buttons.className = 'edit-buttons';
@@ -93,6 +169,7 @@ function startEdit(el) {
   buttons.appendChild(discardBtn);
   buttons.appendChild(saveBtn);
 
+  el.appendChild(editImgStrip);
   el.appendChild(textarea);
   el.appendChild(buttons);
   textarea.focus();
@@ -101,7 +178,7 @@ function startEdit(el) {
   function finishEdit(submit) {
     const newText = textarea.value.trim();
 
-    if (submit && newText) {
+    if (submit && (newText || editImages.length)) {
       // Server will broadcast undo_last (removing this bubble)
       // followed by user_input (re-rendering the new text).
       const editPayload = { type: 'edit_last', text: newText };
