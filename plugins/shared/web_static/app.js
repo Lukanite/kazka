@@ -224,6 +224,7 @@ function appendError(text) {
 }
 
 let thinkingEl = null;
+let thinkingText = '';  // accumulated thinking for current response
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -234,7 +235,8 @@ function connect() {
     log.innerHTML = '';
     currentMsg = null;
     lastUserEl = null;
-    if (thinkingEl) { thinkingEl = null; }
+    thinkingEl = null;
+    thinkingText = '';
 
     setStatus('connected', 'Connected');
     input.disabled = false;
@@ -269,6 +271,21 @@ function connect() {
       if (!currentMsg) {
         const body = startAssistantBubble(msg.source);
         currentMsg._body = body;
+        // Attach accumulated thinking as a collapsible section
+        if (thinkingText) {
+          const details = document.createElement('details');
+          details.className = 'thinking-block';
+          const summary = document.createElement('summary');
+          summary.textContent = 'Thinking';
+          const content = document.createElement('div');
+          content.className = 'thinking-content';
+          content.textContent = thinkingText;
+          details.appendChild(summary);
+          details.appendChild(content);
+          // Insert before the body span
+          currentMsg.insertBefore(details, body);
+          thinkingText = '';
+        }
       }
       const body = currentMsg._body || currentMsg.querySelector('.body');
       body.textContent += msg.text;
@@ -276,13 +293,14 @@ function connect() {
       log.scrollTop = log.scrollHeight;
 
     } else if (msg.type === 'thinking') {
+      thinkingText += msg.text;
       if (!thinkingEl) {
         thinkingEl = document.createElement('div');
         thinkingEl.className = 'msg thinking';
         thinkingEl.textContent = '\uD83D\uDCAD ';
         log.appendChild(thinkingEl);
       }
-      thinkingEl.textContent += msg.text;
+      thinkingEl.textContent = '\uD83D\uDCAD ' + thinkingText;
       log.scrollTop = log.scrollHeight;
 
     } else if (msg.type === 'state') {
@@ -299,12 +317,14 @@ function connect() {
       // A new state means a new response is coming -- close any open bubble
       if (msg.state === 'PROCESSING_VAD' || msg.state === 'PROCESSING_PTT') {
         currentMsg = null;
+        thinkingText = '';
       }
 
     } else if (msg.type === 'clear') {
       log.innerHTML = '';
       currentMsg = null;
       lastUserEl = null;
+      thinkingText = '';
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
 
     } else if (msg.type === 'undo_last') {
@@ -316,6 +336,7 @@ function connect() {
         log.removeChild(log.lastChild);
       }
       currentMsg = null;
+      thinkingText = '';
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
       // Update lastUserEl to the new last user bubble
       const userMsgs = log.querySelectorAll('.msg.user');

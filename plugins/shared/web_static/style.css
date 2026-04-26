@@ -151,6 +151,31 @@ header {
   font-size: 0.85rem;
   padding: 2px 4px;
 }
+.thinking-block {
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: #777;
+  font-style: italic;
+}
+.thinking-block summary {
+  cursor: pointer;
+  color: #666;
+  user-select: none;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.thinking-block summary:hover { color: #999; }
+.thinking-content {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #161616;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
 .msg.error {
   align-self: flex-start;
   background: #3a1a1a;
