@@ -5,8 +5,9 @@ Handles requests to various LLM providers and manages conversation context.
 
 import requests
 import json
+from datetime import datetime
 from typing import Dict, List, Optional, Any, Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC
 from core.config import config
 from core.tool_manager import ToolManager
@@ -80,6 +81,74 @@ class Complete(ResponseEvent):
     """Conversation turn is complete (no more events)."""
     pass
 
+
+# ============================================================================
+# Conversation History
+# ============================================================================
+
+@dataclass
+class HistoryMessage:
+    """
+    A single entry in the LLM conversation history.
+
+    Wraps the API-shaped message dict so we can attach our own metadata
+    (timestamps, etc.) without leaking it to the wire. Use to_api_dict()
+    whenever serializing for an API request.
+    """
+    role: str
+    content: Any  # str, or list of content blocks (text/image/tool_use/tool_result)
+    tool_calls: Optional[List[Dict]] = None  # OpenAI-style tool calls on assistant messages
+    tool_call_id: Optional[str] = None       # Set on role="tool" messages
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_api_dict(self) -> Dict[str, Any]:
+        """Serialize to the dict shape the API expects (no metadata)."""
+        d: Dict[str, Any] = {"role": self.role}
+        # Omit content when empty on tool-call assistant messages (the original
+        # dict shape had no "content" key in that case, and some APIs are picky).
+        if self.content or self.tool_calls is None:
+            d["content"] = self.content
+        if self.tool_calls is not None:
+            d["tool_calls"] = self.tool_calls
+        if self.tool_call_id is not None:
+            d["tool_call_id"] = self.tool_call_id
+        return d
+
+    def extract_text(self) -> str:
+        """
+        Pull plain text out of this message's content.
+
+        Handles both string content and content-block lists (extracting only
+        ``text`` blocks; image, tool_use, and tool_result blocks are skipped).
+        """
+        content = self.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    if text:
+                        parts.append(text)
+            return " ".join(parts)
+        return ""
+
+    def is_tool_result(self) -> bool:
+        """
+        True if this message carries Anthropic-style ``tool_result`` blocks.
+
+        Such messages have role="user" but represent tool execution results,
+        not real user turns — useful for distinguishing turn boundaries.
+        """
+        if not isinstance(self.content, list):
+            return False
+        return any(
+            isinstance(b, dict) and b.get("type") == "tool_result"
+            for b in self.content
+        )
+
+
 class LLMInterface:
     """
     Interface for communicating with Language Model APIs.
@@ -102,7 +171,7 @@ class LLMInterface:
         self.api_key = config.network.api_key
         self.system_prompt = system_prompt or config.assistant.get_system_prompt()
 
-    def _build_query_payload(self, user_message: Optional[str], conversation_history: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    def _build_query_payload(self, user_message: Optional[str], conversation_history: Optional[List[HistoryMessage]] = None, tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Build the API request payload (shared by all query methods).
 
@@ -120,9 +189,9 @@ class LLMInterface:
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
 
-        # Add conversation history if provided
+        # Add conversation history if provided (serialize each entry to API shape)
         if conversation_history:
-            messages.extend(conversation_history)
+            messages.extend(m.to_api_dict() for m in conversation_history)
 
         # Add current user message if provided (None or "" means no new user turn)
         if user_message:
@@ -426,7 +495,7 @@ class LLMInterface:
         except requests.exceptions.HTTPError as e:
             raise requests.RequestException(f"HTTP error: {e.response.status_code} - {e.response.text}")
 
-    def query(self, user_message: Optional[str] = None, conversation_history: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None, streaming: bool = False) -> Generator[ResponseEvent, None, None]:
+    def query(self, user_message: Optional[str] = None, conversation_history: Optional[List[HistoryMessage]] = None, tools: Optional[List[Dict]] = None, streaming: bool = False) -> Generator[ResponseEvent, None, None]:
         """
         Unified query method for all LLM interactions.
 
@@ -567,7 +636,7 @@ class ConversationManager:
             llm_interface: LLM interface to use for queries
         """
         self.llm_interface = llm_interface
-        self.conversation_history: List[Dict] = []
+        self.conversation_history: List[HistoryMessage] = []
 
     def add_message(self, role: str, content: str, images: Optional[list] = None):
         """
@@ -590,9 +659,9 @@ class ConversationManager:
                         "url": f"data:{img.get('media_type', 'image/jpeg')};base64,{img['data']}"
                     }
                 })
-            self.conversation_history.append({"role": role, "content": content_blocks})
+            self.conversation_history.append(HistoryMessage(role=role, content=content_blocks))
         else:
-            self.conversation_history.append({"role": role, "content": content})
+            self.conversation_history.append(HistoryMessage(role=role, content=content))
 
     def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False, images: Optional[list] = None):
         """
@@ -724,17 +793,14 @@ class ConversationManager:
         Yields:
             ToolExecuting and ToolResult events
         """
-        # Add assistant message with tool calls
-        assistant_message = {
-            "role": "assistant",
-            "tool_calls": tool_calls
-        }
-
-        # Include pre-tool dialogue in history if allowed
-        if pre_tool_content and should_speak_pre_tool:
-            assistant_message["content"] = pre_tool_content
-
-        self.conversation_history.append(assistant_message)
+        # Add assistant message with tool calls. Include pre-tool dialogue
+        # in history only if allowed; otherwise leave content empty.
+        assistant_content = pre_tool_content if (pre_tool_content and should_speak_pre_tool) else ""
+        self.conversation_history.append(HistoryMessage(
+            role="assistant",
+            content=assistant_content,
+            tool_calls=tool_calls,
+        ))
 
         # Execute each tool
         for tool_call in tool_calls:
@@ -755,12 +821,11 @@ class ConversationManager:
             print(f"   🔧 Tool result: {tool_result.response}")
 
             # Add to history
-            tool_result_message = {
-                "role": "tool",
-                "tool_call_id": tool_call.get('id', ''),
-                "content": tool_result.response if tool_result.success else f"Error: {tool_result.response}"
-            }
-            self.conversation_history.append(tool_result_message)
+            self.conversation_history.append(HistoryMessage(
+                role="tool",
+                content=tool_result.response if tool_result.success else f"Error: {tool_result.response}",
+                tool_call_id=tool_call.get('id', ''),
+            ))
 
             # Notify execution complete
             yield ToolResult(
@@ -785,19 +850,11 @@ class ConversationManager:
 
         for i in range(len(self.conversation_history) - 1, -1, -1):
             msg = self.conversation_history[i]
-            if msg["role"] == "user" and not self._is_tool_result(msg):
+            if msg.role == "user" and not msg.is_tool_result():
                 del self.conversation_history[i:]
                 return True
 
         return False
-
-    @staticmethod
-    def _is_tool_result(msg: dict) -> bool:
-        """Check if a message is an Anthropic tool_result (not a real user turn)."""
-        content = msg.get("content")
-        if not isinstance(content, list):
-            return False
-        return any(block.get("type") == "tool_result" for block in content)
 
     def clear_history(self):
         """Clear the conversation history."""

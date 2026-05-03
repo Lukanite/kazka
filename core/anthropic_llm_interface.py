@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Any, Generator
 
 # Import base classes from llm_interface (use absolute import to avoid circular import issues)
 from core.llm_interface import (
-    LLMInterface, ConversationManager,
+    LLMInterface, ConversationManager, HistoryMessage,
     ResponseEvent, ContentChunk, ToolCallsRequested, ToolExecuting,
     ToolResult, ThinkingChunk, Complete, Continuation
 )
@@ -61,7 +61,7 @@ class AnthropicLLMInterface(LLMInterface):
             headers["x-api-key"] = self.api_key
         return headers
 
-    def _convert_openai_to_anthropic_messages(self, conversation_history: List[Dict]) -> List[Dict]:
+    def _convert_openai_to_anthropic_messages(self, conversation_history: List[HistoryMessage]) -> List[Dict]:
         """
         Convert OpenAI-style conversation history to Anthropic Messages format.
 
@@ -76,7 +76,7 @@ class AnthropicLLMInterface(LLMInterface):
         - tool_use content blocks for tool calls
 
         Args:
-            conversation_history: OpenAI-style conversation history
+            conversation_history: List of HistoryMessage entries to convert
 
         Returns:
             Anthropic-style message list
@@ -84,9 +84,9 @@ class AnthropicLLMInterface(LLMInterface):
         messages = []
 
         for msg in conversation_history:
-            role = msg.get("role")
-            content = msg.get("content", "")
-            tool_calls = msg.get("tool_calls")
+            role = msg.role
+            content = msg.content if msg.content is not None else ""
+            tool_calls = msg.tool_calls
 
             # Skip system messages - handled separately in Anthropic format
             if role == "system":
@@ -161,7 +161,7 @@ class AnthropicLLMInterface(LLMInterface):
                 })
         return anthropic_tools
 
-    def _build_query_payload(self, user_message: Optional[str], conversation_history: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    def _build_query_payload(self, user_message: Optional[str], conversation_history: Optional[List[HistoryMessage]] = None, tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Build the Anthropic Messages API request payload.
 
@@ -173,7 +173,7 @@ class AnthropicLLMInterface(LLMInterface):
 
         Args:
             user_message: User's message to send to the LLM (None for continuation)
-            conversation_history: Optional conversation history (in OpenAI format, will be converted)
+            conversation_history: List of HistoryMessage entries (will be converted)
             tools: Optional list of tools in OpenAI format (will be converted to Anthropic format)
 
         Returns:
@@ -480,7 +480,7 @@ class AnthropicLLMInterface(LLMInterface):
         except requests.exceptions.HTTPError as e:
             raise requests.RequestException(f"HTTP error: {e.response.status_code} - {e.response.text}")
 
-    def query(self, user_message: Optional[str] = None, conversation_history: Optional[List[Dict]] = None, tools: Optional[List[Dict]] = None, streaming: bool = False) -> Generator[ResponseEvent, None, None]:
+    def query(self, user_message: Optional[str] = None, conversation_history: Optional[List[HistoryMessage]] = None, tools: Optional[List[Dict]] = None, streaming: bool = False) -> Generator[ResponseEvent, None, None]:
         """
         Unified query method for all LLM interactions.
 
@@ -629,9 +629,9 @@ class AnthropicConversationManager(ConversationManager):
                         "data": img["data"]
                     }
                 })
-            self.conversation_history.append({"role": role, "content": content_blocks})
+            self.conversation_history.append(HistoryMessage(role=role, content=content_blocks))
         else:
-            self.conversation_history.append({"role": role, "content": content})
+            self.conversation_history.append(HistoryMessage(role=role, content=content))
 
     def query_with_tools(self, user_message: str, tool_manager: Optional[ToolManager] = None, streaming: bool = False, images: Optional[list] = None):
         """
@@ -686,10 +686,10 @@ class AnthropicConversationManager(ConversationManager):
                         # Conversation turn complete - add assistant message if we have content
                         # Store in Anthropic format (content blocks)
                         if accumulated_content:
-                            self.conversation_history.append({
-                                "role": "assistant",
-                                "content": [{"type": "text", "text": accumulated_content}]
-                            })
+                            self.conversation_history.append(HistoryMessage(
+                                role="assistant",
+                                content=[{"type": "text", "text": accumulated_content}],
+                            ))
                         yield event
                         return  # Exit generator
 
@@ -819,14 +819,14 @@ class AnthropicConversationManager(ConversationManager):
             )
 
         # Add assistant message with tool_use blocks to history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": content_blocks
-        })
+        self.conversation_history.append(HistoryMessage(
+            role="assistant",
+            content=content_blocks,
+        ))
 
         # Add user message with tool_result blocks to history
-        self.conversation_history.append({
-            "role": "user",
-            "content": tool_result_blocks
-        })
+        self.conversation_history.append(HistoryMessage(
+            role="user",
+            content=tool_result_blocks,
+        ))
 

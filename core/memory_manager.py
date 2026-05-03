@@ -9,10 +9,10 @@ import uuid
 import os
 import shutil
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 from core.config import config
-from core.llm_interface import LLMInterface
+from core.llm_interface import LLMInterface, HistoryMessage
 from core.anthropic_llm_interface import AnthropicLLMInterface
 
 
@@ -53,7 +53,6 @@ class MemoryManager:
 
         # Memory storage
         self.memories: List[Memory] = []  # Long-term stored memories
-        self.conversation_log: List[Dict] = []  # Current session conversation pairs
 
         # Directories for conversation logs and memory backups (from config)
         # Set to None in settings to disable either independently
@@ -143,42 +142,86 @@ class MemoryManager:
             print(f"❌ Error loading memories: {e}")
             self.memories = []
 
-    def log_conversation(self, user_input: str, assistant_response: str):
+    @staticmethod
+    def derive_conversation_log(history: List[HistoryMessage]) -> List[Dict]:
         """
-        Log a conversation exchange for batch processing at shutdown.
+        Derive a list of user/assistant exchange pairs from raw LLM history.
+
+        Walks the message list, grouping consecutive entries into turns
+        delimited by real user messages (string content, or content list
+        without tool_result blocks). Each emitted entry has:
+            - user_input: text of the user message starting the turn
+            - assistant_response: concatenated text from any assistant messages
+              in the turn (tool_use blocks and tool_result blocks are skipped)
+            - timestamp: timestamp of the user message starting the turn
 
         Args:
-            user_input: User's transcribed speech
-            assistant_response: Assistant's response
-        """
-        self.conversation_log.append({
-            "user_input": user_input,
-            "assistant_response": assistant_response,
-            "timestamp": datetime.now().isoformat()
-        })
+            history: LLM conversation history as a list of HistoryMessage
 
-    def _extract_from_conversation_log(self) -> List[Dict]:
+        Returns:
+            List of {user_input, assistant_response, timestamp} dicts
+        """
+        log: List[Dict] = []
+        current: Optional[Dict] = None
+        assistant_parts: List[str] = []
+
+        def flush():
+            if current is not None:
+                current["assistant_response"] = " ".join(assistant_parts)
+                log.append(current)
+
+        for msg in history:
+            # Real user turn boundary: user role with non-tool-result content,
+            # or system-injected wake messages.
+            is_user_turn = msg.role == "user" and not msg.is_tool_result()
+            is_system_wake = msg.role == "system"
+
+            if is_user_turn or is_system_wake:
+                flush()
+                current = {
+                    "user_input": msg.extract_text() if is_user_turn else "",
+                    "assistant_response": "",
+                    "timestamp": msg.timestamp,
+                }
+                assistant_parts = []
+                continue
+
+            # Assistant text accumulates into the current turn.
+            if msg.role == "assistant" and current is not None:
+                text = msg.extract_text()
+                if text:
+                    assistant_parts.append(text)
+
+            # Tool messages and tool_result user messages are skipped — they
+            # belong to the in-flight turn but aren't part of the user-facing
+            # exchange.
+
+        flush()
+        return log
+
+    def _extract_from_conversation_log(self, conversation_log: List[Dict]) -> List[Dict]:
         """
         Extract memories from the entire conversation log at shutdown.
+
+        Args:
+            conversation_log: Derived list of {user_input, assistant_response, timestamp} dicts
 
         Returns:
             List of extracted memory items
         """
-        if not self.conversation_log:
+        if not conversation_log:
             return []
-
-
 
         # Format conversation for LLM analysis
         conversation_lines = []
-        for entry in self.conversation_log:
+        for entry in conversation_log:
             conversation_lines.append(f"User: {entry['user_input']}")
             conversation_lines.append(f"{config.assistant.name}: {entry.get('assistant_response', entry.get('kazka_response', ''))}")
             conversation_lines.append("")  # Empty line for readability
 
         conversation_text = "\n".join(conversation_lines)
 
-        print(f"🧠 Analyzing conversation with {len(self.conversation_log)} exchanges and {len(self.memories)} existing memories...")
+        print(f"🧠 Analyzing conversation with {len(conversation_log)} exchanges and {len(self.memories)} existing memories...")
 
         # Format existing memories for the prompt
         existing_memories_text = ""
@@ -194,7 +237,7 @@ class MemoryManager:
         # Debug: Print the full request being sent
         print(f"\n📤 MEMORY EXTRACTION REQUEST TO LLM:")
         print("=" * 60)
-        print(f"Conversation exchanges: {len(self.conversation_log)}")
+        print(f"Conversation exchanges: {len(conversation_log)}")
         print(f"Existing memories: {len(self.memories)}")
         print(f"Prompt length: {len(prompt)} characters")
         print(f"\n--- PROMPT CONTENT ---")
@@ -243,13 +286,18 @@ class MemoryManager:
             return []
 
     
-    def process_and_save(self):
+    def process_and_save(self, history: List[HistoryMessage]):
         """
-        Extract memories from conversation log and save to file.
+        Extract memories from the LLM conversation history and save to file.
         Creates conversation summaries and manages memory limits.
         Called during shutdown.
+
+        Args:
+            history: LLM conversation history; an exchange-pair log is derived from it
         """
-        if not self.conversation_log and not self.memories:
+        conversation_log = self.derive_conversation_log(history)
+
+        if not conversation_log and not self.memories:
             print("🧠 No conversation or memories to process")
             return
 
@@ -258,7 +306,7 @@ class MemoryManager:
             self._backup_memories_to_log()
 
             # Extract memories from conversation log
-            extracted_items = self._extract_from_conversation_log()
+            extracted_items = self._extract_from_conversation_log(conversation_log)
 
             # Convert extracted items to Memory objects
             new_memories = []
@@ -273,9 +321,9 @@ class MemoryManager:
                 print(f"🧠 New memory extracted: {memory.category} - {memory.content}")
 
             # Create a conversation summary if there were any exchanges
-            if self.conversation_log:
+            if conversation_log:
                 print("📝 Creating conversation summary...")
-                conversation_summary = self._create_conversation_summary()
+                conversation_summary = self._create_conversation_summary(conversation_log)
                 if conversation_summary:
                     summary_memory = Memory(
                         id="",
@@ -301,15 +349,15 @@ class MemoryManager:
 
             print(f"✅ Processed and saved {len(self.memories)} memories")
 
-            # Clear conversation log for next session
-            self.conversation_log = []
-
         except Exception as e:
             print(f"❌ Error processing memories: {e}")
 
-    def _create_conversation_summary(self) -> str:
+    def _create_conversation_summary(self, conversation_log: List[Dict]) -> str:
         """
-        Create a concise summary of the current conversation log.
+        Create a concise summary of the given conversation log.
+
+        Args:
+            conversation_log: Derived list of {user_input, assistant_response, timestamp} dicts
 
         Returns:
             Concise bullet-point summary of the conversation
@@ -317,7 +365,7 @@ class MemoryManager:
         try:
             # Format conversation for summarization
             conversation_lines = []
-            for entry in self.conversation_log:
+            for entry in conversation_log:
                 conversation_lines.append(f"User: {entry['user_input']}")
                 conversation_lines.append(f"{config.assistant.name}: {entry.get('assistant_response', entry.get('kazka_response', ''))}")
                 conversation_lines.append("")  # Empty line for readability
@@ -529,12 +577,15 @@ class MemoryManager:
             print(f"❌ Memory summarization error: {e}")
             return ""
 
-    def save_conversation_log(self) -> Optional[str]:
+    def save_conversation_log(self, history: List[HistoryMessage]) -> Optional[str]:
         """
-        Save the current conversation log to a .jsonl file in the log directory.
+        Derive and save a conversation log to a .jsonl file in the log directory.
         Each line is a JSON object with user_input, assistant_response, and timestamp.
         Called during shutdown and sleep cycles to preserve raw conversation history.
         Disabled when conversation_log_dir is set to null in settings.
+
+        Args:
+            history: LLM conversation history to derive exchange pairs from
 
         Returns:
             Path to the saved log file, or None if nothing was saved.
@@ -542,7 +593,9 @@ class MemoryManager:
         if self.log_dir is None:
             return None
 
-        if not self.conversation_log:
+        conversation_log = self.derive_conversation_log(history)
+
+        if not conversation_log:
             print("📝 No conversation exchanges to save")
             return None
 
@@ -553,10 +606,10 @@ class MemoryManager:
             log_path = os.path.join(self.log_dir, f"conversation_{timestamp}.jsonl")
 
             with open(log_path, 'w', encoding='utf-8') as f:
-                for entry in self.conversation_log:
+                for entry in conversation_log:
                     f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
-            print(f"💬 Saved conversation log ({len(self.conversation_log)} exchanges) to {log_path}")
+            print(f"💬 Saved conversation log ({len(conversation_log)} exchanges) to {log_path}")
             return log_path
 
         except Exception as e:
@@ -940,13 +993,12 @@ class MemoryManager:
             print(f"  [{memory.category}] {memory.content}")
 
     def clear_all_memories(self):
-        """Clear all stored memories and conversation log."""
+        """Clear all stored memories."""
         self.memories = []
-        self.conversation_log = []
         try:
             if hasattr(self, 'memory_file'):
                 if os.path.exists(self.memory_file):
                     os.remove(self.memory_file)
-            print("🗑️ All memories and conversation log cleared")
+            print("🗑️ All memories cleared")
         except Exception as e:
             print(f"❌ Error clearing memory file: {e}")

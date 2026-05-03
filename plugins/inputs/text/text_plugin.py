@@ -309,12 +309,11 @@ class TextInputPlugin(InputPlugin):
         history = self.engine.conversation_manager.conversation_history
         print(f"\n--- CONVERSATION HISTORY ({len(history)} messages) ---")
         for i, msg in enumerate(history):
-            role = msg.get("role", "?")
-            content = msg.get("content", "")
+            content = msg.content if msg.content is not None else ""
             # Truncate long messages for readability
             content_str = str(content) if isinstance(content, list) else content
             preview = content_str[:200] + "..." if len(content_str) > 200 else content_str
-            print(f"  [{i}] {role}: {preview}")
+            print(f"  [{i}] {msg.role}: {preview}")
 
         # Tools
         if self.engine.tool_manager and self.engine.config.tools.enable_tools:

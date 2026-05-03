@@ -397,9 +397,6 @@ class AssistantEngine:
         """
         from core.llm_interface import ContentChunk, ThinkingChunk
 
-        # Collect content for memory logging
-        all_content = []
-
         # Query LLM with tools (yields ResponseEvent objects)
         for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=False, images=images):
             # Broadcast thinking events unconditionally, plugins decide
@@ -408,13 +405,7 @@ class AssistantEngine:
                 self._broadcast_output_internal(event.content, thinking_metadata)
             # Only broadcast ContentChunk events with actual content
             elif isinstance(event, ContentChunk) and event.content:
-                all_content.append(event.content)
                 self._broadcast_output_internal(event.content, metadata)
-
-        # Log conversation for memory processing on shutdown
-        if self.memory_manager and all_content:
-            combined_response = "".join(all_content)
-            self.memory_manager.log_conversation(text, combined_response)
 
         # Notify service plugins that interaction is complete
         self._notify_service_plugins("on_interaction_end")
@@ -430,9 +421,6 @@ class AssistantEngine:
         """
         from core.llm_interface import ContentChunk, ThinkingChunk, Complete
 
-        # Accumulate full response for memory logging
-        full_response = ""
-
         # Query LLM with streaming (yields ResponseEvent objects)
         for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=True, images=images):
             # Process ThinkingChunk events - broadcast unconditionally, plugins decide
@@ -442,18 +430,12 @@ class AssistantEngine:
 
             # Process ContentChunk events
             elif isinstance(event, ContentChunk):
-                if event.content:
-                    full_response += event.content
                 self._broadcast_output_chunk_internal(event.content, metadata, event.is_final)
 
             # Process Complete event - flush any buffered output
             elif isinstance(event, Complete):
                 # Send empty chunk with is_final=True to close out any streaming buffers
                 self._broadcast_output_chunk_internal("", metadata, is_final=True)
-
-        # Log conversation for memory processing on shutdown
-        if self.memory_manager and full_response:
-            self.memory_manager.log_conversation(text, full_response)
 
         # Notify service plugins that interaction is complete
         self._notify_service_plugins("on_interaction_end")
@@ -539,18 +521,19 @@ class AssistantEngine:
             # Save memories if requested
             if save_memories:
                 print("🧠 Processing memories before shutdown...")
+                history = self.conversation_manager.conversation_history
                 # Save log
-                log_path = self.memory_manager.save_conversation_log()
+                log_path = self.memory_manager.save_conversation_log(history)
                 if log_path and self.search_index:
                     try:
                         self.search_index.index_conversation_log(log_path)
                         self.search_index.save()
                     except Exception as e:
                         print(f"⚠️  Error updating search index: {e}")
-                
+
                 # Form memories
                 try:
-                    self.memory_manager.process_and_save()
+                    self.memory_manager.process_and_save(history)
                     print(f"✅ Memories saved. {config.assistant.name} will remember you next time!")
                 except Exception as e:
                     print(f"❌ Error saving memories: {e}")
@@ -583,14 +566,15 @@ class AssistantEngine:
         try:
             # 1. Save conversation log to .jsonl, update search index, then process memories
             if self.memory_manager:
-                log_path = self.memory_manager.save_conversation_log()
+                history = self.conversation_manager.conversation_history
+                log_path = self.memory_manager.save_conversation_log(history)
                 if log_path and self.search_index:
                     try:
                         self.search_index.index_conversation_log(log_path)
                         self.search_index.save()
                     except Exception as e:
                         print(f"⚠️  Error updating search index: {e}")
-                self.memory_manager.process_and_save()
+                self.memory_manager.process_and_save(history)
 
             # 2. Clear conversation history (the LLM message list)
             self.conversation_manager.clear_history()
@@ -620,8 +604,7 @@ class AssistantEngine:
         Undo the last conversation turn (internal - called by engine thread only).
 
         Removes the last user message and all subsequent messages from LLM
-        conversation history, and removes the corresponding entry from the
-        memory manager's conversation log.
+        conversation history.
         """
         if not self.conversation_manager.conversation_history:
             print("Nothing to undo.")
@@ -631,10 +614,6 @@ class AssistantEngine:
         if not removed:
             print("Nothing to undo.")
             return
-
-        # Also remove the last entry from the memory manager's session log
-        if self.memory_manager and self.memory_manager.conversation_log:
-            self.memory_manager.conversation_log.pop()
 
         print("Last turn undone.")
         self._notify_service_plugins("on_undo")
