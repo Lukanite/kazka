@@ -223,6 +223,170 @@ function appendError(text) {
   log.scrollTop = log.scrollHeight;
 }
 
+// ---------------------------------------------------------------------------
+// Tool call rendering
+// ---------------------------------------------------------------------------
+
+const MAX_PREVIEW_LINES = 20;
+
+function clipLines(text) {
+  // Returns {clipped, full, wasClipped} for the "show more" affordance
+  const lines = String(text).split('\n');
+  if (lines.length <= MAX_PREVIEW_LINES) {
+    return { clipped: text, full: text, wasClipped: false };
+  }
+  return {
+    clipped: lines.slice(0, MAX_PREVIEW_LINES).join('\n'),
+    full: text,
+    wasClipped: true,
+  };
+}
+
+function formatInput(input) {
+  // Tool args arrive as a JSON string; pretty-print if parseable, else show raw
+  if (typeof input !== 'string') return JSON.stringify(input, null, 2);
+  try { return JSON.stringify(JSON.parse(input), null, 2); }
+  catch { return input; }
+}
+
+function attachClippedText(parent, text) {
+  const { clipped, full, wasClipped } = clipLines(text);
+  const pre = document.createElement('pre');
+  pre.className = 'tool-text';
+  pre.textContent = clipped;
+  parent.appendChild(pre);
+  if (wasClipped) {
+    const more = document.createElement('button');
+    more.className = 'tool-more';
+    more.textContent = `Show ${full.split('\n').length - MAX_PREVIEW_LINES} more lines`;
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pre.textContent = full;
+      more.remove();
+    });
+    parent.appendChild(more);
+  }
+}
+
+// Close the streaming bubble so a tool pill lands between assistant chunks
+// rather than inside the body span. Two-bubble layout (see design doc).
+function closeAssistantBubble() {
+  currentMsg = null;
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+}
+
+function appendToolCall(msg) {
+  closeAssistantBubble();
+
+  const el = document.createElement('details');
+  el.className = 'msg tool-call pending';
+  el.dataset.toolId = msg.id || '';
+
+  const summary = document.createElement('summary');
+  summary.className = 'tool-summary';
+
+  const caret = document.createElement('span');
+  caret.className = 'tool-caret';
+  caret.textContent = '▶'; // ▶ U+25B6 — fills its em-box; CSS rotates 90° when open
+  const icon = document.createElement('span');
+  icon.className = 'tool-icon';
+  icon.textContent = '🔧';
+  const name = document.createElement('span');
+  name.className = 'tool-name';
+  name.textContent = msg.name || 'tool';
+  const status = document.createElement('span');
+  status.className = 'tool-status';
+  // Spinner placeholder; CSS animates it
+  const spinner = document.createElement('span');
+  spinner.className = 'tool-spinner';
+  status.appendChild(spinner);
+
+  summary.appendChild(caret);
+  summary.appendChild(icon);
+  summary.appendChild(name);
+  summary.appendChild(status);
+  el.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'tool-body';
+
+  const inputLabel = document.createElement('div');
+  inputLabel.className = 'tool-label';
+  inputLabel.textContent = 'Input';
+  body.appendChild(inputLabel);
+  attachClippedText(body, formatInput(msg.input));
+
+  // Result section is filled in by appendToolResult
+  const resultSection = document.createElement('div');
+  resultSection.className = 'tool-result-section';
+  body.appendChild(resultSection);
+
+  el.appendChild(body);
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendToolResult(msg) {
+  // Pair with the matching tool_call by id
+  const id = msg.id || '';
+  let el = id ? log.querySelector(`.tool-call[data-tool-id="${CSS.escape(id)}"]`) : null;
+
+  if (!el) {
+    // Orphan result (catch-up replay edge case): render as a standalone box
+    closeAssistantBubble();
+    el = document.createElement('details');
+    el.className = 'msg tool-call';
+    el.dataset.toolId = id;
+
+    const summary = document.createElement('summary');
+    summary.className = 'tool-summary';
+    const caret = document.createElement('span');
+    caret.className = 'tool-caret';
+    caret.textContent = '▶';
+    const icon = document.createElement('span');
+    icon.className = 'tool-icon';
+    icon.textContent = '🔧';
+    const name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = msg.name || 'tool';
+    summary.appendChild(caret);
+    summary.appendChild(icon);
+    summary.appendChild(name);
+    summary.appendChild(document.createElement('span')).className = 'tool-status';
+    el.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'tool-body';
+    const resultSection = document.createElement('div');
+    resultSection.className = 'tool-result-section';
+    body.appendChild(resultSection);
+    el.appendChild(body);
+    log.appendChild(el);
+  }
+
+  el.classList.remove('pending');
+  el.classList.add(msg.success ? 'success' : 'error');
+
+  // Replace spinner with check / cross
+  const status = el.querySelector('.tool-status');
+  if (status) {
+    status.innerHTML = '';
+    status.textContent = msg.success ? '✓' : '✗';
+  }
+
+  const resultSection = el.querySelector('.tool-result-section');
+  if (resultSection) {
+    resultSection.innerHTML = '';
+    const label = document.createElement('div');
+    label.className = 'tool-label';
+    label.textContent = msg.success ? 'Result' : 'Error';
+    resultSection.appendChild(label);
+    attachClippedText(resultSection, msg.result || '');
+  }
+
+  log.scrollTop = log.scrollHeight;
+}
+
 let thinkingEl = null;
 let thinkingText = '';  // accumulated thinking for current response
 
@@ -342,6 +506,12 @@ function connect() {
       const userMsgs = log.querySelectorAll('.msg.user');
       lastUserEl = userMsgs.length ? userMsgs[userMsgs.length - 1] : null;
       if (lastUserEl) lastUserEl.classList.add('editable');
+
+    } else if (msg.type === 'tool_call') {
+      appendToolCall(msg);
+
+    } else if (msg.type === 'tool_result') {
+      appendToolResult(msg);
 
     } else if (msg.type === 'error') {
       appendError('Error: ' + msg.message);

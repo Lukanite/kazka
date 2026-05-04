@@ -54,6 +54,7 @@ class ToolExecuting(ResponseEvent):
     """About to execute a tool."""
     tool_name: str
     tool_args: str  # JSON string of arguments
+    tool_call_id: str = ""  # Pairs with the matching ToolResult
 
 
 @dataclass
@@ -62,6 +63,7 @@ class ToolResult(ResponseEvent):
     tool_name: str
     result: str
     success: bool
+    tool_call_id: str = ""  # Pairs with the originating ToolExecuting
 
 
 @dataclass
@@ -810,10 +812,13 @@ class ConversationManager:
             print(f"   🔧 Tool detected: {function_name}")
             print(f"   📋 Arguments: {function_args}")
 
+            tool_call_id = tool_call.get('id', '')
+
             # Notify execution start
             yield ToolExecuting(
                 tool_name=function_name,
-                tool_args=function_args
+                tool_args=function_args,
+                tool_call_id=tool_call_id,
             )
 
             # Execute
@@ -824,14 +829,15 @@ class ConversationManager:
             self.conversation_history.append(HistoryMessage(
                 role="tool",
                 content=tool_result.response if tool_result.success else f"Error: {tool_result.response}",
-                tool_call_id=tool_call.get('id', ''),
+                tool_call_id=tool_call_id,
             ))
 
             # Notify execution complete
             yield ToolResult(
                 tool_name=function_name,
                 result=tool_result.response,
-                success=tool_result.success
+                success=tool_result.success,
+                tool_call_id=tool_call_id,
             )
 
     def undo_last_turn(self) -> bool:

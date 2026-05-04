@@ -90,6 +90,29 @@ class WebOutputPlugin(OutputPlugin):
         return True
 
     # ------------------------------------------------------------------
+    # Tool call rendering
+    # ------------------------------------------------------------------
+
+    def tool_call(self, event, metadata: Dict[str, Any]):
+        """Forward a ToolExecuting event to clients."""
+        self._server.broadcast({
+            "type": "tool_call",
+            "id": event.tool_call_id,
+            "name": event.tool_name,
+            "input": event.tool_args,
+        })
+
+    def tool_result(self, event, metadata: Dict[str, Any]):
+        """Forward a ToolResult event to clients."""
+        self._server.broadcast({
+            "type": "tool_result",
+            "id": event.tool_call_id,
+            "name": event.tool_name,
+            "result": event.result,
+            "success": event.success,
+        })
+
+    # ------------------------------------------------------------------
     # State endpoint
     # ------------------------------------------------------------------
 

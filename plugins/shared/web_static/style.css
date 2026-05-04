@@ -182,6 +182,108 @@ header {
   border: 1px solid #6a2a2a;
   color: #f88;
 }
+/* Tool call pill */
+.msg.tool-call {
+  align-self: flex-start;
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 0;
+  font-size: 0.85rem;
+  white-space: normal;
+  max-width: 80%;
+  overflow: hidden;
+}
+.msg.tool-call.success { border-color: #2a4a2a; }
+.msg.tool-call.error   { border-color: #6a2a2a; background: #2a1818; }
+.tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  color: #aaa;
+}
+.tool-summary::-webkit-details-marker { display: none; }
+.tool-summary::marker { content: ''; }
+.msg.tool-call:hover .tool-summary { background: #1f1f1f; }
+.tool-caret {
+  font-size: 0.8rem;
+  color: #888;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.msg.tool-call[open] > .tool-summary > .tool-caret {
+  transform: rotate(90deg);
+}
+.tool-icon { font-size: 0.9rem; }
+.tool-name {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: #ccc;
+  flex: 1;
+}
+.tool-status {
+  font-size: 0.85rem;
+  color: #888;
+  min-width: 14px;
+  text-align: center;
+}
+.msg.tool-call.success .tool-status { color: #6a9; }
+.msg.tool-call.error   .tool-status { color: #f88; }
+.tool-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #444;
+  border-top-color: #aaa;
+  border-radius: 50%;
+  animation: tool-spin 0.8s linear infinite;
+}
+@keyframes tool-spin { to { transform: rotate(360deg); } }
+.tool-body {
+  padding: 6px 12px 10px;
+  border-top: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.msg.tool-call.error .tool-body { border-top-color: #4a2a2a; }
+.tool-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-top: 2px;
+}
+.tool-text {
+  margin: 0;
+  padding: 6px 8px;
+  background: #0e0e0e;
+  border-radius: 6px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8rem;
+  color: #bbb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.tool-more {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  color: #888;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.tool-more:hover { background: #2a2a2a; color: #ccc; }
 /* Image thumbnails inside message bubbles */
 .msg-images {
   display: flex;

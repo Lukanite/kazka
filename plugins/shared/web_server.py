@@ -247,6 +247,24 @@ class WebServer:
                     self._thinking_accumulator = ""
                 else:
                     self._chunk_accumulator += message.get("text", "")
+            elif msg_type in ("tool_call", "tool_result"):
+                # Flush any in-flight chunk/thinking before recording the tool event,
+                # so replay order matches live order.
+                if self._thinking_accumulator:
+                    self._history.append({
+                        "type": "thinking",
+                        "text": self._thinking_accumulator,
+                    })
+                    self._thinking_accumulator = ""
+                if self._chunk_accumulator:
+                    self._history.append({
+                        "type": "chunk",
+                        "text": self._chunk_accumulator,
+                        "is_final": True,
+                        "source": "UNKNOWN",
+                    })
+                    self._chunk_accumulator = ""
+                self._history.append(message)
             elif msg_type == "state":
                 self._last_state = message  # Only latest state is useful
 

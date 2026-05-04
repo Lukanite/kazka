@@ -774,6 +774,7 @@ class AnthropicConversationManager(ConversationManager):
         for tool_call in tool_calls:
             function_name = tool_call['function']['name']
             function_args = tool_call['function']['arguments']
+            tool_call_id = tool_call.get('id', '')
 
             print(f"   🔧 Tool detected: {function_name}")
             print(f"   📋 Arguments: {function_args}")
@@ -781,7 +782,8 @@ class AnthropicConversationManager(ConversationManager):
             # Notify execution start
             yield ToolExecuting(
                 tool_name=function_name,
-                tool_args=function_args
+                tool_args=function_args,
+                tool_call_id=tool_call_id,
             )
 
             # Execute tool
@@ -799,7 +801,7 @@ class AnthropicConversationManager(ConversationManager):
             # Add tool_use block to assistant message
             content_blocks.append({
                 "type": "tool_use",
-                "id": tool_call.get('id', ''),
+                "id": tool_call_id,
                 "name": function_name,
                 "input": args_dict
             })
@@ -807,7 +809,7 @@ class AnthropicConversationManager(ConversationManager):
             # Add tool_result block for user message
             tool_result_blocks.append({
                 "type": "tool_result",
-                "tool_use_id": tool_call.get('id', ''),
+                "tool_use_id": tool_call_id,
                 "content": tool_result.response if tool_result.success else f"Error: {tool_result.response}"
             })
 
@@ -815,7 +817,8 @@ class AnthropicConversationManager(ConversationManager):
             yield ToolResult(
                 tool_name=function_name,
                 result=tool_result.response,
-                success=tool_result.success
+                success=tool_result.success,
+                tool_call_id=tool_call_id,
             )
 
         # Add assistant message with tool_use blocks to history

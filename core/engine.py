@@ -395,7 +395,7 @@ class AssistantEngine:
             metadata: Input metadata
             images: Optional list of image dicts for vision queries
         """
-        from core.llm_interface import ContentChunk, ThinkingChunk
+        from core.llm_interface import ContentChunk, ThinkingChunk, ToolExecuting, ToolResult
 
         # Query LLM with tools (yields ResponseEvent objects)
         for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=False, images=images):
@@ -406,6 +406,10 @@ class AssistantEngine:
             # Only broadcast ContentChunk events with actual content
             elif isinstance(event, ContentChunk) and event.content:
                 self._broadcast_output_internal(event.content, metadata)
+            elif isinstance(event, ToolExecuting):
+                self._broadcast_tool_call_internal(event, metadata)
+            elif isinstance(event, ToolResult):
+                self._broadcast_tool_result_internal(event, metadata)
 
         # Notify service plugins that interaction is complete
         self._notify_service_plugins("on_interaction_end")
@@ -419,7 +423,7 @@ class AssistantEngine:
             metadata: Input metadata
             images: Optional list of image dicts for vision queries
         """
-        from core.llm_interface import ContentChunk, ThinkingChunk, Complete
+        from core.llm_interface import ContentChunk, ThinkingChunk, Complete, ToolExecuting, ToolResult
 
         # Query LLM with streaming (yields ResponseEvent objects)
         for event in self.conversation_manager.query_with_tools(text, self.tool_manager, streaming=True, images=images):
@@ -431,6 +435,12 @@ class AssistantEngine:
             # Process ContentChunk events
             elif isinstance(event, ContentChunk):
                 self._broadcast_output_chunk_internal(event.content, metadata, event.is_final)
+
+            elif isinstance(event, ToolExecuting):
+                self._broadcast_tool_call_internal(event, metadata)
+
+            elif isinstance(event, ToolResult):
+                self._broadcast_tool_result_internal(event, metadata)
 
             # Process Complete event - flush any buffered output
             elif isinstance(event, Complete):
@@ -464,6 +474,18 @@ class AssistantEngine:
         for plugin in self.output_plugins.values():
             if plugin.should_handle(metadata):
                 plugin.output_chunk(text, metadata, is_final)
+
+    def _broadcast_tool_call_internal(self, event, metadata: Dict):
+        """Broadcast a ToolExecuting event to output plugins."""
+        for plugin in self.output_plugins.values():
+            if plugin.should_handle(metadata):
+                plugin.tool_call(event, metadata)
+
+    def _broadcast_tool_result_internal(self, event, metadata: Dict):
+        """Broadcast a ToolResult event to output plugins."""
+        for plugin in self.output_plugins.values():
+            if plugin.should_handle(metadata):
+                plugin.tool_result(event, metadata)
 
     # =========================================================================
     # Synchronized Print API (Thread-Safe)

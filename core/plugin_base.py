@@ -182,6 +182,22 @@ class OutputPlugin(ABC):
             self._chunk_buffer = ""
             self._metadata_buffer = {}
 
+    def tool_call(self, event, metadata: Dict[str, Any]):
+        """
+        Handle a tool-call notification (LLM is about to execute a tool).
+
+        Default: ignore. Override to render tool activity (e.g., web UI).
+        """
+        pass
+
+    def tool_result(self, event, metadata: Dict[str, Any]):
+        """
+        Handle a tool-result notification (tool execution finished).
+
+        Default: ignore. Override to render tool output (e.g., web UI).
+        """
+        pass
+
     def print(self, *args, lock: bool = True, **kwargs):
         """
         Print with optional synchronization to avoid interleaving with streaming output.
