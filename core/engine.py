@@ -719,7 +719,6 @@ class AssistantEngine:
         # Start engine thread FIRST so it can process endpoint registrations
         self.engine_thread = threading.Thread(target=self.run, daemon=False, name="EngineThread")
         self.engine_thread.start()
-        time.sleep(0.1)  # Give engine thread time to start
 
         # Start all plugins (they submit endpoint registrations to queue)
         for name, plugin in self.input_plugins.items():
@@ -737,7 +736,6 @@ class AssistantEngine:
         print("✅ Engine ready!")
 
         # Wait a moment for endpoint registrations to process
-        time.sleep(0.1)
         print(f"📍 Registered endpoints: {self._list_endpoints()}")
 
     def _list_endpoints(self) -> str:
