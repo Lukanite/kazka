@@ -1,10 +1,20 @@
 # Kazka - A Naturally Learning Voice Assistant with Personality
 
-A locally-driven personal Voice Assistant with easily customizeable and modular:
- - Brains (LLM Inference provider) - Anthropic or OpenAI API
+<img width="960" height="640" alt="image" src="https://github.com/user-attachments/assets/c18e20cd-1628-46be-b5b4-b3aa952567de" />
+
+## Kazka who?
+
+Originally a project to make the [Google AIY Voice Kit](https://aiyprojects.withgoogle.com/voice/) what it had always longed to be - "Artificial Intelligence Yourself."
+
+That meant decoupling it from any kind of cloud integration, and using its Linux-friendly hardware to create a completely local, extensible, free-form personal assistant, while retaining the audio, intent-driven functionalities that were previously solely the domain of the cloud into the home itself.
+
+The goal was not just to replace a cloud voice assistant like Google, Alexa, or Siri, but to make one that could actually *afford* to be truly personal - one that would remember how you spoke to it last week, treated it, and what you asked of it, using natural learning and retention mechanisms without any preset "rules" on what it can and will remember... and when going that far, why not have some fun with the personality, too? 
+
+What ended up coming out of it was a modular, naturally learning virtual assistant with easily customizeable and modular:
+ - Brains (LLM Inference provider) - Anthropic or OpenAI API for easy [llama.cpp](https://github.com/ggml-org/llama.cpp) integration, LM Studio, or Cloud API integration
  - Ears (Speech to Text) - OpenAI API, or local Whisper
  - Mouth (Text to Speech) - OpenAI API, or local Piper
- - Personality - Prompt .txt files
+ - Personality, and memory forming - Prompt .txt files
 
 ## Features
 
@@ -37,7 +47,7 @@ python main.py --no-tts      # Voice input, console output only
 ```
 
 > **Prefer local?** `assistant_settings.toml` has ready-to-uncomment blocks for
-> Ollama (LLM), faster-whisper-server (STT), and Kokoro (TTS).
+> llama.cpp/Ollama (LLM), faster-whisper-server (STT), and Kokoro (TTS).
 
 ## Configuration
 
@@ -237,10 +247,10 @@ python -m unittest discover tests -v
 
 ## Hardware Requirements
 
-For full voice assistant functionality:
+For full voice assistant functionality (on any Windows/Linux platform, not just Raspberry Pi!):
 - Microphone (USB or I2S)
 - Speaker (USB, I2S, or 3.5mm)
-- Optional: GPIO button + LED (Raspberry Pi)
+- Optional: GPIO button + LED (This one *is* for Raspberry Pi, but for other platforms just swap out the GPIO/LED plugins!)
 
 For text-only mode:
 - Just a terminal!
