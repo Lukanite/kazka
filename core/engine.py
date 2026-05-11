@@ -64,9 +64,6 @@ class AssistantEngine:
         # Memory manager for persistent conversation context
         self.memory_manager = MemoryManager(self.config.memory.file_path)
 
-        # Conversation search index (initialized in _initialize_tools if enabled)
-        self.search_index = None
-
         # Endpoint registry (only accessed by engine thread)
         self.endpoints: Dict[str, Dict[str, Callable]] = {}
         # Structure: {"voice": {"wake_requested": callback}}
@@ -546,12 +543,8 @@ class AssistantEngine:
                 history = self.conversation_manager.conversation_history
                 # Save log
                 log_path = self.memory_manager.save_conversation_log(history)
-                if log_path and self.search_index:
-                    try:
-                        self.search_index.index_conversation_log(log_path)
-                        self.search_index.save()
-                    except Exception as e:
-                        print(f"⚠️  Error updating search index: {e}")
+                if log_path:
+                    self._notify_service_plugins("on_conversation_log_saved", log_path)
 
                 # Form memories
                 try:
@@ -586,16 +579,12 @@ class AssistantEngine:
         print("😴 Sleep cycle starting...")
 
         try:
-            # 1. Save conversation log to .jsonl, update search index, then process memories
+            # 1. Save conversation log to .jsonl, notify plugins, then process memories
             if self.memory_manager:
                 history = self.conversation_manager.conversation_history
                 log_path = self.memory_manager.save_conversation_log(history)
-                if log_path and self.search_index:
-                    try:
-                        self.search_index.index_conversation_log(log_path)
-                        self.search_index.save()
-                    except Exception as e:
-                        print(f"⚠️  Error updating search index: {e}")
+                if log_path:
+                    self._notify_service_plugins("on_conversation_log_saved", log_path)
                 self.memory_manager.process_and_save(history)
 
             # 2. Clear conversation history (the LLM message list)
@@ -640,18 +629,19 @@ class AssistantEngine:
         print("Last turn undone.")
         self._notify_service_plugins("on_undo")
 
-    def _notify_service_plugins(self, event_name: str):
+    def _notify_service_plugins(self, event_name: str, *args, **kwargs):
         """
         Notify all service plugins of an event (internal - engine thread only).
 
         Args:
             event_name: Name of the method to call on each plugin
+            *args, **kwargs: Forwarded to each plugin's handler method
         """
         for plugin in self.service_plugins.values():
             try:
                 handler = getattr(plugin, event_name, None)
                 if handler:
-                    handler()
+                    handler(*args, **kwargs)
             except Exception as e:
                 print(f"⚠️  Error notifying service plugin {plugin.name}.{event_name}: {e}")
 
@@ -817,35 +807,24 @@ class AssistantEngine:
             ))
             print(f"   ✅ Matter tools initialized (server: {matter_host}:{matter_port})")
 
-            # Register conversation search tools if enabled
+            # Register conversation search tools — index is owned by the
+            # conversation_index service plugin (if registered).
             search_config = self.config.conversation_search
-            if search_config.enabled:
-                try:
-                    from core.conversation_search import ConversationSearchIndex
-                    log_dir = self.config.memory.conversation_log_dir or "log"
-                    self.search_index = ConversationSearchIndex(
-                        index_dir=search_config.index_dir,
-                        model_path=search_config.model_path,
-                        tokenizer_path=search_config.tokenizer_path,
-                        log_dir=log_dir
-                    )
-                    self.search_index.load()
-                    self.tool_manager.register(SearchConversationLogsTool(
-                        self.search_index,
-                        context_window=search_config.context_window,
-                        top_k=search_config.top_k,
-                        min_score=search_config.min_score
-                    ))
-                    self.tool_manager.register(ReadConversationContextTool(
-                        self.search_index
-                    ))
-                    self.tool_manager.register(ListConversationsInTimeTool(
-                        log_dir=log_dir
-                    ))
-                    print(f"   ✅ Conversation search initialized ({self.search_index.get_entry_count()} indexed entries)")
-                except Exception as e:
-                    print(f"   ⚠️  Conversation search not available: {e}")
-                    self.search_index = None
+            conv_index_plugin = self.service_plugins.get("conversation_index")
+            if conv_index_plugin:
+                log_dir = self.config.memory.conversation_log_dir or "log"
+                self.tool_manager.register(SearchConversationLogsTool(
+                    conv_index_plugin,
+                    context_window=search_config.context_window,
+                    top_k=search_config.top_k,
+                    min_score=search_config.min_score
+                ))
+                self.tool_manager.register(ReadConversationContextTool(
+                    conv_index_plugin
+                ))
+                self.tool_manager.register(ListConversationsInTimeTool(
+                    log_dir=log_dir
+                ))
 
             # Load tool configs from settings
             self.tool_manager.load_tool_configs(self.config.tools.tool_settings)

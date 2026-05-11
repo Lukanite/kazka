@@ -471,3 +471,13 @@ class ServicePlugin(ABC):
         Override to react to undo events (e.g. sync UI state). Default: no-op.
         """
         pass
+
+    def on_conversation_log_saved(self, log_path: str):
+        """
+        Called on the engine thread after a conversation log .jsonl file is
+        written to disk (during shutdown or sleep cycle).
+
+        Override to react to new log files, e.g. update a search index.
+        Default: no-op.
+        """
+        pass

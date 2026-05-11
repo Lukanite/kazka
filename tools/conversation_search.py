@@ -9,7 +9,6 @@ import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from core.tool_manager import Tool
-from core.conversation_search import ConversationSearchIndex
 from core.config import config
 
 try:
@@ -25,10 +24,10 @@ class SearchConversationLogsTool(Tool):
 
     config_schema = {"enabled": True}
 
-    def __init__(self, search_index: ConversationSearchIndex,
+    def __init__(self, plugin,
                  context_window: int = 1, top_k: int = 3,
                  min_score: float = 0.15):
-        self._search_index = search_index
+        self._plugin = plugin
         self._context_window = context_window
         self._top_k = top_k
         self._min_score = min_score
@@ -120,7 +119,11 @@ class SearchConversationLogsTool(Tool):
         if not query:
             return {"error": "No search query provided"}
 
-        if self._search_index.get_entry_count() == 0:
+        index = self._plugin.index if self._plugin else None
+        if index is None:
+            return {"error": "Conversation search is not available."}
+
+        if index.get_entry_count() == 0:
             return {"message": "No conversation logs have been indexed yet."}
 
         # Parse optional time period parameters
@@ -129,13 +132,13 @@ class SearchConversationLogsTool(Tool):
             return error
 
         if start_iso or end_iso:
-            results = self._search_index.search_in_time_range(
+            results = index.search_in_time_range(
                 query, start_time=start_iso, end_time=end_iso,
                 top_k=self._top_k, context_window=self._context_window,
                 min_score=self._min_score
             )
         else:
-            results = self._search_index.search(
+            results = index.search(
                 query, top_k=self._top_k, context_window=self._context_window,
                 min_score=self._min_score
             )
@@ -146,7 +149,7 @@ class SearchConversationLogsTool(Tool):
         matches = []
         for result in results:
             # Get surrounding context
-            ctx = self._search_index.read_context_window(
+            ctx = index.read_context_window(
                 result.file, result.line, window=self._context_window
             )
             context_turns = ctx.get('context', [])
@@ -175,7 +178,7 @@ class SearchConversationLogsTool(Tool):
 
         response = {
             "query": query,
-            "total_indexed": self._search_index.get_entry_count(),
+            "total_indexed": index.get_entry_count(),
             "matches": matches
         }
         if start_iso:
@@ -190,8 +193,8 @@ class ReadConversationContextTool(Tool):
 
     config_schema = {"enabled": True}
 
-    def __init__(self, search_index: ConversationSearchIndex):
-        self._search_index = search_index
+    def __init__(self, plugin):
+        self._plugin = plugin
 
     @property
     def name(self) -> str:
@@ -241,11 +244,15 @@ class ReadConversationContextTool(Tool):
         if end_line < start_line:
             return {"error": "end_line must be >= start_line"}
 
+        index = self._plugin.index if self._plugin else None
+        if index is None:
+            return {"error": "Conversation search is not available."}
+
         # Convert start/end to center/window for the underlying API
         center = (start_line + end_line) // 2
         window = max(center - start_line, end_line - center)
 
-        ctx = self._search_index.read_context_window(
+        ctx = index.read_context_window(
             filename, center, window=window
         )
         context_turns = ctx.get('context', [])

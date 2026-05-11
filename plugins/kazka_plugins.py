@@ -85,6 +85,11 @@ def _make_web_service(engine, cfg, resources):
     return PluginBuild(WebServicePlugin(engine, resources["web_server"]))
 
 
+def _make_conversation_index(engine, cfg, resources):
+    from plugins.services.conversation_index import ConversationIndexPlugin
+    return PluginBuild(ConversationIndexPlugin(engine))
+
+
 # ---------------------------------------------------------------------------
 # Manifest
 # ---------------------------------------------------------------------------
@@ -122,3 +127,7 @@ register_plugin(name="sleep_watchdog", kind="service", factory=_make_sleep_watch
 register_plugin(name="web_service", kind="service", factory=_make_web_service,
                 requires_resource=["web_server"],
                 description="Web UI lifecycle bridge (clear on sleep, etc.)")
+register_plugin(name="conversation_index", kind="service",
+                factory=_make_conversation_index,
+                always_on=True,
+                description="Semantic search index over conversation logs")
