@@ -85,6 +85,16 @@ class PluginLoader:
         self.resources[name] = value
         return self
 
+    def get_resources(self) -> Dict[str, Any]:
+        """
+        Snapshot of the resource pool after load_all().
+
+        Used to hand resources off to other loaders (e.g. ToolLoader)
+        without the engine needing to know individual resource names.
+        Returned dict is a copy — mutations don't leak back.
+        """
+        return dict(self.resources)
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------

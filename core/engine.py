@@ -64,6 +64,11 @@ class AssistantEngine:
         # Memory manager for persistent conversation context
         self.memory_manager = MemoryManager(self.config.memory.file_path)
 
+        # Resources contributed by plugins, handed in by the loader after
+        # plugin construction. Read by _initialize_tools() to seed the tool
+        # loader. Empty until set_plugin_resources() is called.
+        self._plugin_resources: Dict[str, Any] = {}
+
         # Endpoint registry (only accessed by engine thread)
         self.endpoints: Dict[str, Dict[str, Callable]] = {}
         # Structure: {"voice": {"wake_requested": callback}}
@@ -682,6 +687,16 @@ class AssistantEngine:
         self.service_plugins[name] = plugin
         print(f"✅ Registered service: {name}")
 
+    def set_plugin_resources(self, resources: Dict[str, Any]):
+        """
+        Receive the resource pool from PluginLoader after plugin construction.
+
+        These resources are seeded into the tool loader during _initialize_tools()
+        so tool factories can request them by name. Must be called before
+        startup() so they're available when tools initialize.
+        """
+        self._plugin_resources = dict(resources)
+
     def startup(self):
         """Initialize all systems and plugins, then start engine thread."""
         print(f"🚀 Starting {config.assistant.name} Assistant Engine...")
@@ -760,80 +775,30 @@ class AssistantEngine:
             traceback.print_exc()
 
     def _initialize_tools(self):
-        """Initialize and register all available tools."""
+        """Discover and register tools via the tool manifest.
+
+        Hands the entire plugin-provided resource pool to the tool loader.
+        The engine doesn't know or care which resources exist by name —
+        plugin manifests publish resources, tool manifests consume them.
+        """
         print("🔧 Initializing tools...")
 
         try:
-            # Import tools
-            from tools import (
-                GetDateTimeTool,
-                ScheduleSelfWakeTool,
-                CancelSelfWakeTool,
-                ListSelfWakesTool,
-                MatterLightControlTool,
-                MatterListDevicesTool,
-                SearchConversationLogsTool,
-                ReadConversationContextTool,
-                ListConversationsInTimeTool
+            from core.tool_loader import ToolLoader
+
+            loader = ToolLoader(
+                engine=self,
+                tool_manager=self.tool_manager,
+                config=self.config,
+                disabled=set(self.config.tools.disabled_tools or []),
             )
 
-            # Register tools
-            self.tool_manager.register(GetDateTimeTool())
+            for name, value in self._plugin_resources.items():
+                loader.add_resource(name, value)
 
-            # Register self-wake tools (uses scheduler service plugin if registered)
-            scheduler = self.service_plugins.get("scheduler")
-            self.tool_manager.register(ScheduleSelfWakeTool(scheduler))
-            self.tool_manager.register(CancelSelfWakeTool(scheduler))
-            self.tool_manager.register(ListSelfWakesTool(scheduler))
-
-            # Register Matter light control tools
-            matter_config = self.config.tools.tool_settings.get('matter', {})
-            matter_host = matter_config.get('host', 'charmander.localdomain')
-            matter_port = matter_config.get('port', 5580)
-            device_aliases = matter_config.get('device_aliases', {
-                'light': {'node_id': 1, 'endpoint_id': 1}
-            })
-            groups = matter_config.get('groups', {})
-
-            self.tool_manager.register(MatterLightControlTool(
-                matter_host=matter_host,
-                matter_port=matter_port,
-                device_aliases=device_aliases,
-                groups=groups
-            ))
-            self.tool_manager.register(MatterListDevicesTool(
-                matter_host=matter_host,
-                matter_port=matter_port
-            ))
-            print(f"   ✅ Matter tools initialized (server: {matter_host}:{matter_port})")
-
-            # Register conversation search tools — index is owned by the
-            # conversation_index service plugin (if registered).
-            search_config = self.config.conversation_search
-            conv_index_plugin = self.service_plugins.get("conversation_index")
-            if conv_index_plugin:
-                log_dir = self.config.memory.conversation_log_dir or "log"
-                self.tool_manager.register(SearchConversationLogsTool(
-                    conv_index_plugin,
-                    context_window=search_config.context_window,
-                    top_k=search_config.top_k,
-                    min_score=search_config.min_score
-                ))
-                self.tool_manager.register(ReadConversationContextTool(
-                    conv_index_plugin
-                ))
-                self.tool_manager.register(ListConversationsInTimeTool(
-                    log_dir=log_dir
-                ))
-
-            # Load tool configs from settings
-            self.tool_manager.load_tool_configs(self.config.tools.tool_settings)
-
+            loader.discover().load_all()
             print(f"✅ {len(self.tool_manager)} tools initialized")
 
-        except ImportError as e:
-            print(f"⚠️  Failed to import tools: {e}")
-            print("   Tools will be disabled.")
         except Exception as e:
             print(f"⚠️  Error initializing tools: {e}")
             import traceback

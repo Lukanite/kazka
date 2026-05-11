@@ -22,7 +22,7 @@ What ended up coming out of it was a modular, naturally learning virtual assista
 2. A **Learning** assistant that doesn't get overwhelmed: Uses your assistant's personality and LLM itself to remember facts and details across conversations, without going insane from context! Automatically creates memories and forgets the least important ones so the assistant can learn about you and stay up to date with what's happening.
 2. **Local Data**: You're fully in control of the data that your assistant remembers about you! Look into its internal memorization processes, current memory, and conversation logs (and even tweak them, if you wish).
 3. Can run **fully locally**: Running on a decently powerful machine? Do everything on-device (STT, LLM Inference, TTS) for complete privacy or delegate portions of it to other servers (Anthropic and OpenAI API compatible)
-4. **Modular Plugins**: Want your assistant to be able to do something? Easily integrate your own tools via a single Python file
+4. **Modular Plugins & Tools**: A manifest-driven plugin system. Add a class, register one line in `kazka_plugins.py` or `kazka_tools.py`, and you're done — no edits to the engine or entry point. Plugins can publish typed resources for other plugins or LLM tools to consume.
 5. **Modular I/O**: Got some LEDs, buttons, or anything else you want to trigger or respond to your assistant? This project uses a flexible IO engine so you can register to be called on events, or call into the engine to create new inference requests.
 
 ## Quick Start
@@ -44,6 +44,7 @@ python main.py --text-only   # No mic/speaker needed — great first test
 python main.py               # Full voice assistant
 python main.py --no-voice    # Text + button input, with TTS output
 python main.py --no-tts      # Voice input, console output only
+python main.py --disable led # Disable any plugin by name (repeatable)
 ```
 
 > **Prefer local?** `assistant_settings.toml` has ready-to-uncomment blocks for
@@ -107,87 +108,218 @@ A custom `Kazka.onnx` wake word model is included. You can train your own using 
 
 ```
 ├── core/
-│   ├── engine.py          # Core engine with request queue
-│   ├── requests.py        # Request/response objects
-│   ├── plugin_base.py     # Base plugin classes
-│   ├── config.py          # Configuration system
-│   ├── llm_interface.py   # LLM communication (OpenAI-compatible)
+│   ├── engine.py            # Core engine with request queue
+│   ├── requests.py          # Request/response objects
+│   ├── plugin_base.py       # InputPlugin / OutputPlugin / ServicePlugin
+│   ├── plugin_registry.py   # PluginSpec, PluginBuild, register_plugin
+│   ├── plugin_loader.py     # Discover + topo-sort + build plugins
+│   ├── tool_registry.py     # ToolSpec, ToolBuild, register_tool
+│   ├── tool_loader.py       # Discover + build LLM tools
+│   ├── config.py            # Configuration system
+│   ├── llm_interface.py     # LLM communication (OpenAI-compatible)
 │   ├── anthropic_llm_interface.py  # LLM communication (Anthropic)
-│   ├── memory_manager.py  # Persistent memory system
-│   └── tool_manager.py    # Tool execution
+│   ├── memory_manager.py    # Persistent memory system
+│   └── tool_manager.py      # Tool registry + execution
 ├── plugins/
+│   ├── kazka_plugins.py     # Plugin manifest (where new plugins are registered)
 │   ├── inputs/
-│   │   ├── voice/         # Wake word + VAD + STT
-│   │   ├── button/        # Hardware button + LED controller
-│   │   └── text/          # Keyboard input
-│   └── outputs/
-│       ├── console.py     # Console output
-│       ├── tts_plugin.py  # Text-to-speech
-│       └── led_plugin.py  # LED visual feedback
-├── tools/                 # Tool implementations
-├── prompts/               # System prompts (customize these!)
+│   │   ├── voice/           # Wake word + VAD + STT
+│   │   ├── button/          # Hardware button
+│   │   ├── text/            # Keyboard input
+│   │   └── web/             # Browser/WebSocket input
+│   ├── outputs/
+│   │   ├── console.py       # Stdout streaming
+│   │   ├── tts_plugin.py    # Text-to-speech
+│   │   ├── led_plugin.py    # LED visual feedback
+│   │   └── web_output_plugin.py  # WebSocket streaming to browsers
+│   └── services/
+│       ├── scheduler.py             # Self-wake timers
+│       ├── sleep_watchdog.py        # Inactivity-driven memory flush
+│       ├── conversation_index.py    # Semantic search index
+│       └── web_service_plugin.py    # Web UI lifecycle bridge
+├── tools/
+│   ├── kazka_tools.py       # Tool manifest (where new tools are registered)
+│   ├── time_awareness.py    # get_datetime
+│   ├── self_wake.py         # Schedule/cancel/list self-wakes
+│   ├── matter.py            # Matter light control
+│   └── conversation_search.py  # Semantic search over past conversations
+├── prompts/                 # System prompts (customize these!)
 ├── tests/
-│   ├── integration/       # End-to-end tests
-│   └── test_*.py          # Unit tests
-├── main.py                # Entry point
-├── assistant_settings.toml        # Your configuration (gitignored)
-└── assistant_settings.example.toml  # Example configuration (commit this)
+│   ├── integration/         # End-to-end tests
+│   └── test_*.py            # Unit tests
+├── main.py                  # Entry point
+├── assistant_settings.toml            # Your configuration (gitignored)
+└── assistant_settings.example.toml    # Example configuration (commit this)
 ```
 
-## Plugin Development
+## Plugin & Tool Development
 
-### Creating an Input Plugin
+Kazka uses a manifest-driven plugin system. Every plugin and every LLM tool is
+registered in one of two manifest files:
+
+- **`plugins/kazka_plugins.py`** — the plugin manifest
+- **`tools/kazka_tools.py`** — the LLM tool manifest
+
+Adding a new plugin or tool is a two-step process: write the implementation,
+then add a `register_*` entry pointing to it. The engine never imports plugin
+or tool classes directly, so you never have to touch `engine.py` or `main.py`
+to add a capability.
+
+### Adding a Plugin
+
+There are three plugin kinds:
+
+| Kind | Base class | Purpose |
+|------|-----------|---------|
+| `input` | `InputPlugin` | Produces user input (voice, text, button, web) |
+| `output` | `OutputPlugin` / `QueuedOutputPlugin` | Consumes assistant output (TTS, console, LED) |
+| `service` | `ServicePlugin` | Observes engine state (scheduler, memory flush) |
+
+**1.** Write the class. Same pattern as before — extend the appropriate base,
+implement `start()` and `stop()`:
 
 ```python
+# plugins/inputs/my_input/my_input_plugin.py
 from core.plugin_base import InputPlugin
 
 class MyInputPlugin(InputPlugin):
-    def __init__(self, engine, config=None):
+    def __init__(self, engine):
         super().__init__(engine, "my_input")
-        self.config = config or {}
 
     def start(self):
-        # Initialize resources
-        # Optionally register endpoints
         self.engine.register_endpoint("my_input", "trigger", self._on_trigger)
 
     def stop(self):
-        # Cleanup resources
         pass
 
     def _on_trigger(self, data):
-        # Handle endpoint call
-        text = data.get('text', '')
-        self.emit_input(text, {'source': 'MY_INPUT'})
+        self.emit_input(data.get("text", ""), {"source": "MY_INPUT"})
 ```
 
-### Creating an Output Plugin
-
-For outputs that need sequential processing (like TTS):
+**2.** Register it in `plugins/kazka_plugins.py`. Factories MUST defer
+heavy imports so the manifest stays cheap to read:
 
 ```python
-from core.plugin_base import QueuedOutputPlugin
+def _make_my_input(engine, cfg, resources):
+    from plugins.inputs.my_input.my_input_plugin import MyInputPlugin
+    return PluginBuild(MyInputPlugin(engine))
 
-class MyOutputPlugin(QueuedOutputPlugin):
-    def __init__(self, engine, config=None):
-        super().__init__(engine, "my_output")
-
-    def start_internal(self):
-        # Initialize resources
-        pass
-
-    def _process_output(self, text, metadata):
-        # Handle output (runs in worker thread, can block)
-        print(f"Output: {text}")
-
-    def should_handle(self, metadata):
-        # Return True if this output should handle the message
-        return metadata.get('source') in ['VAD', 'PTT']
-
-    def stop_internal(self):
-        # Cleanup resources
-        pass
+register_plugin(name="my_input", kind="input", factory=_make_my_input,
+                description="My new input source")
 ```
+
+That's it. The loader picks it up on next startup. To disable it temporarily,
+use `--disable my_input` on the command line — no per-plugin CLI flag needed.
+
+### Adding a Tool
+
+Tools work the same way:
+
+**1.** Write the tool. Extend `core.tool_manager.Tool`:
+
+```python
+# tools/my_tool.py
+from core.tool_manager import Tool
+
+class MyTool(Tool):
+    @property
+    def name(self): return "my_tool"
+
+    @property
+    def description(self):
+        return "What the tool does and when the LLM should call it."
+
+    def execute(self, **kwargs):
+        return {"result": "hello"}
+```
+
+**2.** Register it in `tools/kazka_tools.py`:
+
+```python
+def _make_my_tool(engine, cfg, resources):
+    from tools.my_tool import MyTool
+    return ToolBuild(MyTool())
+
+register_tool("my_tool", _make_my_tool,
+              description="What the tool does")
+```
+
+### Resources: Sharing Between Plugins and Tools
+
+When two plugins need to share an object (e.g. the web server is used by
+web_input, web_output, and web_service), or when a tool needs to talk to a
+plugin (e.g. self-wake tools call into the scheduler plugin), the plugin
+publishes a **resource** that other plugins or tools can request by name.
+
+**Publishing a resource** — return it from your factory and declare it on the
+spec:
+
+```python
+def _make_scheduler(engine, cfg, resources):
+    from plugins.services.scheduler import SchedulerPlugin
+    plugin = SchedulerPlugin(engine)
+    # Expose a narrow facade, NOT the plugin itself.
+    return PluginBuild(plugin, resources={"scheduler": plugin.api()})
+
+register_plugin(name="scheduler", kind="service", factory=_make_scheduler,
+                always_on=True,
+                provides_resource=["scheduler"])
+```
+
+> **Tip:** Don't expose the raw plugin instance as a resource. Add a small
+> facade class in the same file (e.g. `SchedulerPluginApi`) that exposes only
+> what consumers should call. This keeps lifecycle methods (`start`/`stop`)
+> and engine references out of the consumer's reach.
+
+**Consuming a resource** — declare it on the spec and read it from the factory's
+`resources` arg:
+
+```python
+def _make_schedule_self_wake(engine, cfg, resources):
+    from tools.self_wake import ScheduleSelfWakeTool
+    return ToolBuild(ScheduleSelfWakeTool(resources["scheduler"]))
+
+register_tool("schedule_self_wake", _make_schedule_self_wake,
+              requires_resource=["scheduler"])
+```
+
+If a required resource isn't available (e.g. the providing plugin was disabled),
+the plugin loader fails fast (since the user explicitly opted into the plugin)
+and the tool loader skips the dependent tool with a warning (since tools are
+auto-bundled with their plugin dependency).
+
+### Spec Reference
+
+`register_plugin()` accepts:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique plugin name (used for `--disable`, endpoint targets, etc.) |
+| `kind` | `"input"`, `"output"`, or `"service"` |
+| `factory` | `factory(engine, cfg, resources) -> PluginBuild` |
+| `always_on` | If True, can't be disabled via CLI or config |
+| `enabled_default` | If False, only loads when explicitly enabled |
+| `requires_resource` | List of resource names this plugin needs |
+| `provides_resource` | List of resource names this plugin's factory will return |
+| `description` | Free-form description for introspection |
+
+`register_tool()` accepts a subset: `name`, `factory`, `requires_resource`,
+`description`. Tools don't provide resources or have a `kind`.
+
+### Third-Party Plugins & Tools
+
+External packages can contribute plugins and tools without forking Kazka. In
+their `pyproject.toml`:
+
+```toml
+[project.entry-points."kazka.plugins"]
+my_pkg = "my_pkg.kazka_plugins"
+
+[project.entry-points."kazka.tools"]
+my_pkg = "my_pkg.kazka_tools"
+```
+
+The loader discovers these alongside the internal manifests during startup.
 
 ## Endpoint System
 

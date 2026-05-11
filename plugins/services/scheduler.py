@@ -25,6 +25,27 @@ class ScheduledTimer:
     timer_thread: Optional[threading.Timer] = None
 
 
+class SchedulerPluginApi:
+    """Narrow facade over SchedulerPlugin for external consumers (tools).
+
+    Exposes only the scheduling surface — not lifecycle methods like
+    start/stop or the engine reference. Construct via plugin.api().
+    """
+
+    def __init__(self, plugin: 'SchedulerPlugin'):
+        self._plugin = plugin
+
+    def schedule_timer(self, delay_description: str, delay_seconds: float,
+                       callback: Optional[Callable] = None) -> ScheduledTimer:
+        return self._plugin.schedule_timer(delay_description, delay_seconds, callback)
+
+    def cancel_timer(self, timer_id: str) -> bool:
+        return self._plugin.cancel_timer(timer_id)
+
+    def list_timers(self, active_only: bool = True) -> List[ScheduledTimer]:
+        return self._plugin.list_timers(active_only)
+
+
 class SchedulerPlugin(ServicePlugin):
     """
     Service plugin that manages timers for self-wake events.
@@ -40,6 +61,10 @@ class SchedulerPlugin(ServicePlugin):
 
         self.timers: Dict[str, ScheduledTimer] = {}
         self._lock = threading.Lock()
+
+    def api(self) -> 'SchedulerPluginApi':
+        """Return a narrow facade for external consumers (tools)."""
+        return SchedulerPluginApi(self)
 
     def start(self):
         """Initialize scheduler state."""

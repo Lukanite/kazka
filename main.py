@@ -85,6 +85,7 @@ def main():
 
     loader = PluginLoader(engine, config, disabled=build_disabled_set(args))
     loader.discover().load_all()
+    engine.set_plugin_resources(loader.get_resources())
 
     engine.startup()
 

@@ -15,6 +15,23 @@ from core.plugin_base import ServicePlugin
 from core.config import config
 
 
+class ConversationIndexPluginApi:
+    """Narrow facade over ConversationIndexPlugin for external consumers (tools).
+
+    Exposes only `.index` (the underlying ConversationSearchIndex or None).
+    Reads through to the plugin so callers observe late initialization
+    correctly — the property may be None at construction time and become
+    populated after the plugin's start() runs.
+    """
+
+    def __init__(self, plugin: 'ConversationIndexPlugin'):
+        self._plugin = plugin
+
+    @property
+    def index(self) -> Optional['ConversationSearchIndex']:
+        return self._plugin.index
+
+
 class ConversationIndexPlugin(ServicePlugin):
     """
     Service plugin that owns the ConversationSearchIndex.
@@ -27,6 +44,10 @@ class ConversationIndexPlugin(ServicePlugin):
     def __init__(self, engine: 'AssistantEngine'):
         super().__init__(engine, "conversation_index")
         self.index: Optional['ConversationSearchIndex'] = None
+
+    def api(self) -> 'ConversationIndexPluginApi':
+        """Return a narrow facade for external consumers (tools)."""
+        return ConversationIndexPluginApi(self)
 
     def start(self):
         search_config = config.conversation_search

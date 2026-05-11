@@ -72,7 +72,8 @@ def _make_web_output(engine, cfg, resources):
 
 def _make_scheduler(engine, cfg, resources):
     from plugins.services.scheduler import SchedulerPlugin
-    return PluginBuild(SchedulerPlugin(engine))
+    plugin = SchedulerPlugin(engine)
+    return PluginBuild(plugin, resources={"scheduler": plugin.api()})
 
 
 def _make_sleep_watchdog(engine, cfg, resources):
@@ -87,7 +88,8 @@ def _make_web_service(engine, cfg, resources):
 
 def _make_conversation_index(engine, cfg, resources):
     from plugins.services.conversation_index import ConversationIndexPlugin
-    return PluginBuild(ConversationIndexPlugin(engine))
+    plugin = ConversationIndexPlugin(engine)
+    return PluginBuild(plugin, resources={"conversation_index": plugin.api()})
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +123,7 @@ register_plugin(name="web_output", kind="output", factory=_make_web_output,
 # Services
 register_plugin(name="scheduler", kind="service", factory=_make_scheduler,
                 always_on=True,
+                provides_resource=["scheduler"],
                 description="Self-wake timer scheduler")
 register_plugin(name="sleep_watchdog", kind="service", factory=_make_sleep_watchdog,
                 description="Inactivity-driven memory flush + reset")
@@ -129,5 +132,5 @@ register_plugin(name="web_service", kind="service", factory=_make_web_service,
                 description="Web UI lifecycle bridge (clear on sleep, etc.)")
 register_plugin(name="conversation_index", kind="service",
                 factory=_make_conversation_index,
-                always_on=True,
+                provides_resource=["conversation_index"],
                 description="Semantic search index over conversation logs")
