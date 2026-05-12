@@ -13,10 +13,15 @@ the audio callback fast (<10ms).
 """
 
 import collections
+import string
 import threading
 import numpy as np
 import sounddevice as sd
 from typing import Optional, Dict, Any
+
+
+def _normalize_echo(text: str) -> str:
+    return text.strip().strip(string.punctuation + string.whitespace).lower()
 
 from core.plugin_base import InputPlugin
 from core.config import config
@@ -298,7 +303,10 @@ class VoiceInputPlugin(InputPlugin):
         print(f"\n   🗣️  COMMAND ({source}): \"{text}\"")
 
         # Emit input to engine (thread-safe via queue)
-        self.emit_input(text, {'source': source})
+        if text:
+            self.emit_input(text, {'source': source})
+        else:
+            print("   ⚠️  Empty transcription — skipping.")
 
         # Reset state
         self.state = "WAITING"
@@ -335,6 +343,9 @@ class VoiceInputPlugin(InputPlugin):
                 # Use speech recognition vocab_prompt for domain-specific vocabulary
                 vocab_prompt = config.speech_recognition.vocab_prompt
                 text = self.scribe.transcribe(audio, prompt=vocab_prompt if vocab_prompt else None)
+                # Whisper sometimes echoes the prompt verbatim on near-silence — drop it
+                if vocab_prompt and text and _normalize_echo(text) == _normalize_echo(vocab_prompt):
+                    text = ""
 
             return text.strip() if text else ""
 
