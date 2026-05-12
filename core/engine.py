@@ -64,11 +64,6 @@ class AssistantEngine:
         # Memory manager for persistent conversation context
         self.memory_manager = MemoryManager(self.config.memory.file_path)
 
-        # Resources contributed by plugins, handed in by the loader after
-        # plugin construction. Read by _initialize_tools() to seed the tool
-        # loader. Empty until set_plugin_resources() is called.
-        self._plugin_resources: Dict[str, Any] = {}
-
         # Endpoint registry (only accessed by engine thread)
         self.endpoints: Dict[str, Dict[str, Callable]] = {}
         # Structure: {"voice": {"wake_requested": callback}}
@@ -695,18 +690,15 @@ class AssistantEngine:
         self.service_plugins[name] = plugin
         print(f"✅ Registered service: {name}")
 
-    def set_plugin_resources(self, resources: Dict[str, Any]):
+    def startup(self, plugin_resources: Optional[Dict[str, Any]] = None):
         """
-        Receive the resource pool from PluginLoader after plugin construction.
+        Initialize all systems and plugins, then start engine thread.
 
-        These resources are seeded into the tool loader during _initialize_tools()
-        so tool factories can request them by name. Must be called before
-        startup() so they're available when tools initialize.
+        Args:
+            plugin_resources: Resources produced by plugin factories
+                (from PluginLoader.get_resources()). Seeded into the tool
+                loader so tool factories can request them by name.
         """
-        self._plugin_resources = dict(resources)
-
-    def startup(self):
-        """Initialize all systems and plugins, then start engine thread."""
         print(f"🚀 Starting {config.assistant.name} Assistant Engine...")
 
         # Load resume history from previous conversation and set initial system prompt
@@ -719,7 +711,7 @@ class AssistantEngine:
         # Initialize tools if enabled
         # Note: Use 'is not None' because ToolManager.__len__ returns 0 when empty
         if self.tool_manager is not None and self.config.tools.enable_tools:
-            self._initialize_tools()
+            self._initialize_tools(plugin_resources or {})
 
         # Warm up LLM cache with the final system prompt (including memories and tools)
         self._warmup_llm_cache()
@@ -780,7 +772,7 @@ class AssistantEngine:
             import traceback
             traceback.print_exc()
 
-    def _initialize_tools(self):
+    def _initialize_tools(self, plugin_resources: Dict[str, Any]):
         """Discover and register tools via the tool manifest.
 
         Hands the entire plugin-provided resource pool to the tool loader.
@@ -799,7 +791,7 @@ class AssistantEngine:
                 disabled=set(self.config.tools.disabled_tools or []),
             )
 
-            for name, value in self._plugin_resources.items():
+            for name, value in plugin_resources.items():
                 loader.add_resource(name, value)
 
             loader.discover().load_all()
