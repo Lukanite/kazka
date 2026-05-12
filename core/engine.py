@@ -142,6 +142,10 @@ class AssistantEngine:
         Send message to component endpoint and wait for response (sync, blocking).
         Thread-safe - can be called from any thread.
 
+        If called from the engine thread (e.g., inside a service plugin hook),
+        dispatches synchronously without queueing — queueing would deadlock,
+        since the engine thread is the one that would need to service the queue.
+
         Args:
             target: Target component name
             endpoint: Endpoint name
@@ -153,6 +157,10 @@ class AssistantEngine:
         """
         if data is None:
             data = {}
+
+        # Already on the engine thread — dispatch directly to avoid self-deadlock.
+        if threading.current_thread() == self.engine_thread:
+            return self._dispatch_endpoint_internal(target, endpoint, data)
 
         # Create response queue for sync request
         response_queue = Queue()

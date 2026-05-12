@@ -321,22 +321,49 @@ my_pkg = "my_pkg.kazka_tools"
 
 The loader discovers these alongside the internal manifests during startup.
 
-## Endpoint System
+## Communication Between Plugins
 
-Plugins communicate via endpoints for 1-1 messaging:
+Kazka has four communication mechanisms, each suited to a different problem.
+When you're writing a plugin and need to interact with the rest of the system,
+pick from this table first:
+
+| If you want to… | Use | Direction | Timing |
+|-----------------|-----|-----------|--------|
+| Feed user input into the LLM pipeline | `emit_input()` (InputPlugin) | input → engine | async |
+| Receive assistant output (text, tool calls) | `output()` / `output_chunk()` (OutputPlugin) | engine → outputs (broadcast) | async, engine thread |
+| Call one specific peer plugin at runtime | **Endpoints** | plugin ↔ plugin (1-1) | async or sync |
+| Hold a reference to a peer plugin's API | **Resources** | wired once at build time | n/a (DI) |
+| React to engine lifecycle (interaction/sleep/undo) | **Service hooks** | engine → service plugin | sync, engine thread |
+
+Rules of thumb:
+
+- **Endpoints vs. resources is the most common point of confusion.** Use a
+  resource when plugin B's API is part of plugin A's *construction* — A needs
+  to hold a reference to talk to B repeatedly. Use an endpoint when the
+  interaction is occasional and discovered at runtime ("the button was just
+  pressed; tell voice to start listening").
+- **`endpoint_call` blocks until the engine thread services it.** Cheap from
+  background threads; safe from the engine thread too (it short-circuits to
+  a direct dispatch — see `core/engine.py`).
+- **Service hooks run inline on the engine thread.** Keep them
+  near-instantaneous. If a hook needs to do real work, spawn a timer or
+  thread from inside it (see `plugins/services/sleep_watchdog.py`).
+
+### Endpoints
+
+1-1 messaging between plugins. A plugin registers a named endpoint during
+`start()`; any other plugin (or input thread) can call into it.
 
 ```python
-# Register an endpoint
-engine.register_endpoint("voice", "wake_requested", handler_callback)
+# In a plugin's start()
+engine.register_endpoint("voice", "wake_requested", self._on_wake_requested)
 
-# Send async message (fire-and-forget)
-engine.endpoint_send("voice", "wake_requested", {'source': 'button'})
-
-# Sync call (waits for response)
-response = engine.endpoint_call("voice", "get_state", {})
+# From anywhere
+engine.endpoint_send("voice", "wake_requested", {'source': 'button'})  # fire-and-forget
+response = engine.endpoint_call("voice", "get_state", {})              # waits for response
 ```
 
-### Common Endpoints
+Common built-in endpoints:
 
 | Component | Endpoint | Description |
 |-----------|----------|-------------|
@@ -346,6 +373,42 @@ response = engine.endpoint_call("voice", "get_state", {})
 | voice | get_state | Get current voice state |
 | led | set_state | Update LED pattern |
 | text | submit | Submit text input |
+
+### Resources
+
+Build-time dependency injection. A plugin's factory returns a narrow facade in
+`PluginBuild(plugin, resources={"name": facade})`; consumers declare
+`requires_resource=["name"]` and read it from the factory's `resources` arg.
+See "Resources: Sharing Between Plugins and Tools" above for the full pattern.
+
+Prefer resources over endpoints when:
+- The consumer needs the API at construction time (it stores the reference).
+- The contract is stable enough to express as method calls (`scheduler.schedule(...)`)
+  rather than message names.
+- The same handle is used many times — endpoint dispatch overhead and
+  stringly-typed names get tedious.
+
+### Service Hooks
+
+`ServicePlugin` subclasses can override these methods to observe the engine:
+
+| Hook | When |
+|------|------|
+| `on_interaction_start()` | User input arrived, before LLM dispatch |
+| `on_interaction_end()` | LLM finished responding to a user turn |
+| `on_sleep_complete()` | After a sleep cycle (memory flush + reset) |
+| `on_undo()` | After a turn was successfully undone |
+| `on_conversation_log_saved(log_path)` | A `.jsonl` conversation log was written |
+
+All hooks run *inline on the engine thread*. That means:
+
+- You can safely read engine state (conversation history, plugin registries)
+  without locks.
+- You must not block. If you need to do real work, do what `sleep_watchdog`
+  does: set a `threading.Timer` from inside the hook and let it fire on its
+  own thread.
+- `endpoint_call` from a hook is safe — it short-circuits to a direct dispatch
+  when invoked on the engine thread.
 
 ## Voice Plugin States
 
