@@ -47,23 +47,41 @@ def _make_list_self_wakes(engine, cfg, resources):
 # Matter (light control)
 # ---------------------------------------------------------------------------
 
+# Both Matter tools share a single [tools.tool_settings.matter] section
+# rather than duplicating host/port/aliases/groups under each tool name.
+def _matter_config() -> dict:
+    mc = config.tools.tool_settings.get("matter")
+    if not mc:
+        raise ValueError(
+            "Matter tool requires [tools.tool_settings.matter] in "
+            "assistant_settings.toml (host, device_aliases, ...)"
+        )
+    if "host" not in mc:
+        raise ValueError("[tools.tool_settings.matter] is missing 'host'")
+    return mc
+
+
 def _make_matter_light_control(engine, cfg, resources):
     from tools.matter import MatterLightControlTool
+    mc = _matter_config()
+    if "device_aliases" not in mc:
+        raise ValueError(
+            "[tools.tool_settings.matter] is missing 'device_aliases'"
+        )
     return ToolBuild(MatterLightControlTool(
-        matter_host=cfg.get("host", "charmander.localdomain"),
-        matter_port=cfg.get("port", 5580),
-        device_aliases=cfg.get("device_aliases", {
-            "light": {"node_id": 1, "endpoint_id": 1}
-        }),
-        groups=cfg.get("groups", {}),
+        matter_host=mc["host"],
+        matter_port=mc.get("port", 5580),
+        device_aliases=mc["device_aliases"],
+        groups=mc.get("groups", {}),
     ))
 
 
 def _make_matter_list_devices(engine, cfg, resources):
     from tools.matter import MatterListDevicesTool
+    mc = _matter_config()
     return ToolBuild(MatterListDevicesTool(
-        matter_host=cfg.get("host", "charmander.localdomain"),
-        matter_port=cfg.get("port", 5580),
+        matter_host=mc["host"],
+        matter_port=mc.get("port", 5580),
     ))
 
 
