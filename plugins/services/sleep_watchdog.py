@@ -58,12 +58,13 @@ class SleepWatchdogPlugin(ServicePlugin):
                 self._timer.cancel()
                 self._timer = None
 
-    def on_interaction_start(self):
+    def on_interaction_start(self, text, metadata, images=None):
         """
-        Called on the engine thread when user input arrives, before LLM processing.
+        Called on the engine thread when an interaction begins, before LLM processing.
 
-        Cancels any running inactivity timer — the user is actively engaged,
-        so we shouldn't be counting idle time during LLM response latency.
+        Cancels any running inactivity timer — an interaction is in flight, so
+        we shouldn't be counting idle time during LLM response latency. Fires
+        for both user- and wake-initiated interactions; payload args are unused.
         """
         with self._lock:
             if self._stopped:

@@ -371,7 +371,7 @@ class AssistantEngine:
             images: Optional list of image dicts for vision queries
         """
         # Notify service plugins that an interaction is starting
-        self._notify_service_plugins("on_interaction_start")
+        self._notify_service_plugins("on_interaction_start", text, metadata, images)
 
         try:
             # Check if streaming is enabled
@@ -850,11 +850,20 @@ class AssistantEngine:
         # (no tool_call_id required, unlike "tool" role).
         self.conversation_manager.add_message("system", tool_message)
 
-        # Empty string signals system-initiated query; the notification is already in history.
-        for event in self.conversation_manager.query_with_tools("", self.tool_manager, streaming=False):
-            # Only broadcast ContentChunk events with actual content
-            if isinstance(event, ContentChunk) and event.content:
-                self._broadcast_output_internal(event.content, {'source': 'WAKE_TIMER'})
+        wake_metadata = {'source': 'WAKE_TIMER', 'wake_id': timer_id, 'delay_description': delay_description}
+
+        # Notify service plugins so they can react the same as for user-initiated
+        # turns (pause idle tracking, mirror to UI, etc.). Source disambiguates.
+        self._notify_service_plugins("on_interaction_start", tool_message, wake_metadata, None)
+
+        try:
+            # Empty string signals system-initiated query; the notification is already in history.
+            for event in self.conversation_manager.query_with_tools("", self.tool_manager, streaming=False):
+                # Only broadcast ContentChunk events with actual content
+                if isinstance(event, ContentChunk) and event.content:
+                    self._broadcast_output_internal(event.content, wake_metadata)
+        finally:
+            self._notify_service_plugins("on_interaction_end")
 
     # =========================================================================
     # Status & Monitoring

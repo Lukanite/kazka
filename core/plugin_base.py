@@ -440,11 +440,17 @@ class ServicePlugin(ABC):
         """
         pass
 
-    def on_interaction_start(self):
+    def on_interaction_start(self, text: str, metadata: Dict[str, Any], images: Optional[list] = None):
         """
-        Called on the engine thread when user input arrives, before LLM processing.
+        Called on the engine thread when an interaction begins, before LLM processing.
 
-        Override to pause idle tracking. Default: no-op.
+        Fires for both user-initiated interactions (text/voice/web input) and
+        system-initiated ones (e.g. self-wake timers). Inspect
+        ``metadata['source']`` to distinguish — wake-fired interactions use
+        ``'WAKE_TIMER'``. Implementations that only need the timing signal
+        (e.g. pausing idle tracking) can ignore the args.
+
+        Override to react. Default: no-op.
         """
         pass
 

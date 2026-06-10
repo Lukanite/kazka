@@ -163,6 +163,35 @@ class WebServer:
             return True
         return False
 
+    def record_user_input(self, text: str, images: Optional[list] = None):
+        """
+        Append a user_input message to history and broadcast it to clients.
+
+        Used to mirror inputs that originated outside the web UI (text plugin,
+        voice plugin) so connected browsers see the user's turn before the
+        assistant's reply streams in.
+        """
+        if not text and not images:
+            return
+        msg = {"type": "user_input", "text": text}
+        if images:
+            msg["images"] = images
+        with self._history_lock:
+            self._history.append(msg)
+        self.broadcast(msg)
+
+    def record_wake(self, delay_description: str = ""):
+        """
+        Append a wake event to history and broadcast it to clients.
+
+        Used so a wake-initiated assistant reply has visible context in the UI
+        instead of appearing unprompted.
+        """
+        msg = {"type": "wake", "delay_description": delay_description}
+        with self._history_lock:
+            self._history.append(msg)
+        self.broadcast(msg)
+
     def undo_last_exchange(self):
         """
         Remove the last user message and its assistant response from history,

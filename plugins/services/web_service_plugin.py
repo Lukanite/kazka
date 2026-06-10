@@ -5,6 +5,8 @@ Complements WebInputPlugin and WebOutputPlugin. Receives sleep notifications
 from the engine and clears the web history and client UIs accordingly.
 """
 
+from typing import Any, Dict, Optional
+
 from core.plugin_base import ServicePlugin
 from plugins.shared.web_server import WebServer
 
@@ -26,6 +28,25 @@ class WebServicePlugin(ServicePlugin):
 
     def stop(self):
         print("🛑 Web service plugin stopped")
+
+    def on_interaction_start(self, text: str, metadata: Dict[str, Any], images: Optional[list] = None):
+        """
+        Mirror interaction-start events to connected clients.
+
+        Branches on ``metadata['source']``:
+          - ``WEB``: already recorded + rendered by the WebServer's text_input
+            handler (and the originating client renders locally) — skip.
+          - ``WAKE_TIMER``: render a system/wake bubble so the assistant's
+            reply has visible context instead of appearing unprompted.
+          - anything else (text/voice plugins): render as a user bubble.
+        """
+        source = metadata.get("source")
+        if source == "WEB":
+            return
+        if source == "WAKE_TIMER":
+            self._server.record_wake(metadata.get("delay_description", ""))
+            return
+        self._server.record_user_input(text, images)
 
     def on_sleep_complete(self):
         """Clear conversation history and notify all clients after a sleep cycle."""

@@ -394,7 +394,7 @@ Prefer resources over endpoints when:
 
 | Hook | When |
 |------|------|
-| `on_interaction_start()` | User input arrived, before LLM dispatch |
+| `on_interaction_start(text, metadata, images)` | Interaction starting (user input or wake), before LLM dispatch |
 | `on_interaction_end()` | LLM finished responding to a user turn |
 | `on_sleep_complete()` | After a sleep cycle (memory flush + reset) |
 | `on_undo()` | After a turn was successfully undone |

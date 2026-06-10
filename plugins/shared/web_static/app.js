@@ -428,6 +428,15 @@ function connect() {
     if (msg.type === 'user_input') {
       appendUser(msg.text, msg.images);
 
+    } else if (msg.type === 'wake') {
+      const el = document.createElement('div');
+      el.className = 'msg wake';
+      const desc = msg.delay_description ? ` (${msg.delay_description})` : '';
+      el.textContent = `⏰ Wake-up triggered${desc}`;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+      currentMsg = null;
+
     } else if (msg.type === 'chunk') {
       // Remove any lingering thinking bubble
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
