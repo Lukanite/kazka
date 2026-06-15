@@ -396,7 +396,8 @@ Prefer resources over endpoints when:
 |------|------|
 | `on_interaction_start(text, metadata, images)` | Interaction starting (user input or wake), before LLM dispatch |
 | `on_interaction_end()` | LLM finished responding to a user turn |
-| `on_sleep_complete()` | After a sleep cycle (memory flush + reset) |
+| `on_sleep_start()` | Start of a sleep cycle, before memory formation (sleep only, not reset) |
+| `on_session_ready()` | A fresh conversation context is live: at startup, and after every sleep or reset |
 | `on_undo()` | After a turn was successfully undone |
 | `on_conversation_log_saved(log_path)` | A `.jsonl` conversation log was written |
 

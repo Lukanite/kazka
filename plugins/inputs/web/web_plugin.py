@@ -29,6 +29,7 @@ class WebInputPlugin(InputPlugin):
     def start(self):
         self.web_server.set_input_callback(self._on_text_received)
         self.web_server.set_edit_callback(self._on_edit_last)
+        self.web_server.set_control_callback(self._on_control)
         self.web_server.start(
             host=config.web.host,
             port=config.web.port,
@@ -50,3 +51,16 @@ class WebInputPlugin(InputPlugin):
         self.engine.undo_turn()
         # Submit the edited text as new input
         self.emit_input(text, {"source": "WEB"}, images=images)
+
+    def _on_control(self, action: str):
+        """Called by the WebServer when a client sends an engine control action.
+
+        Allowlisted to the two safe session controls so a client can't drive
+        arbitrary engine internals over the socket.
+        """
+        if action == "sleep":
+            self.engine.sleep()
+        elif action == "reset":
+            self.engine.reset_conversation()
+        else:
+            print(f"⚠️  Ignoring unknown web control action: {action!r}")

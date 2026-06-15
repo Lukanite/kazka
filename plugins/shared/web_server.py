@@ -46,7 +46,9 @@ class WebServer:
         self._clients_lock = threading.Lock()
         self._input_callback: Optional[Callable[[str], None]] = None
         self._edit_callback: Optional[Callable[[str], None]] = None
+        self._control_callback: Optional[Callable[[str], None]] = None
         self._edit_undo_pending = False  # Flag to prevent double-undo from edit path
+        self._saving = False  # True between begin_saving() and finish_session()
 
         # Catch-up history for late-joining clients.
         # Stores only replayable messages (final chunks + last state).
@@ -80,11 +82,15 @@ class WebServer:
             with self._history_lock:
                 catchup = list(self._history)
                 last_state = self._last_state
+                saving = self._saving
 
             for msg in catchup:
                 await ws.send_text(json.dumps(msg))
             if last_state:
                 await ws.send_text(json.dumps(last_state))
+            # A client joining mid-sleep should see the saving state too.
+            if saving:
+                await ws.send_text(json.dumps({"type": "saving"}))
 
             with self._clients_lock:
                 self._clients.add(ws)
@@ -130,6 +136,13 @@ class WebServer:
                             # Queue engine undo + re-submit (async)
                             self._edit_callback(text, images or None)
 
+                    elif msg_type == "control":
+                        # Engine-level controls (sleep / reset). The plugin
+                        # validates the action against an allowlist.
+                        action = msg.get("action", "")
+                        if action and self._control_callback:
+                            self._control_callback(action)
+
             except WebSocketDisconnect:
                 pass
             finally:
@@ -147,6 +160,34 @@ class WebServer:
     def set_edit_callback(self, callback: Callable[[str], None]):
         """Register the function called when a client edits the last message."""
         self._edit_callback = callback
+
+    def set_control_callback(self, callback: Callable[[str], None]):
+        """Register the function called when a client sends an engine control
+        action (e.g. 'sleep', 'reset')."""
+        self._control_callback = callback
+
+    def begin_saving(self):
+        """Mark a sleep cycle as in progress and notify clients.
+
+        The flag is held server-side so every client — including ones that
+        join mid-sleep — knows a save is underway, and so finish_session()
+        can stamp the eventual 'clear' as saved rather than discarded.
+        """
+        with self._history_lock:
+            self._saving = True
+        self.broadcast({"type": "saving"})
+
+    def finish_session(self):
+        """Clear history and tell all clients a fresh session is live.
+
+        Stamps the 'clear' with whether a sleep preceded it (saved=True) or it
+        was a plain reset/startup (saved=False), then resets the saving flag.
+        """
+        with self._history_lock:
+            saved = self._saving
+            self._saving = False
+        self.clear_history()
+        self.broadcast({"type": "clear", "saved": saved})
 
     def clear_history(self):
         """Clear all message history and reset streaming state."""

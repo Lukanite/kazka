@@ -48,10 +48,17 @@ class WebServicePlugin(ServicePlugin):
             return
         self._server.record_user_input(text, images)
 
-    def on_sleep_complete(self):
-        """Clear conversation history and notify all clients after a sleep cycle."""
-        self._server.clear_history()
-        self._server.broadcast({"type": "clear"})
+    def on_sleep_start(self):
+        """Tell clients a sleep cycle has begun so they can show a saving state."""
+        self._server.begin_saving()
+
+    def on_session_ready(self):
+        """Clear history and notify all clients that a fresh session is live.
+
+        The server stamps the clear with whether a sleep preceded it, so each
+        client can show the right outcome.
+        """
+        self._server.finish_session()
 
     def on_undo(self):
         """Remove the last exchange from history and notify all clients."""

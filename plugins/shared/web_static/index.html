@@ -10,6 +10,7 @@
   <header>
     <div id="status-dot"></div>
     <span id="status-text">Connecting&hellip;</span>
+    <button id="new-session" title="New session" disabled>&#x21bb;</button>
   </header>
   <div id="log"></div>
   <div id="preview-strip"></div>
@@ -19,6 +20,22 @@
     <input id="input" type="text" placeholder="Message Kazka&hellip;" disabled />
     <button id="send" disabled>Send</button>
   </footer>
+
+  <div id="modal-overlay" class="hidden">
+    <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">Start a new session?</h2>
+      <p>This clears the current conversation.</p>
+      <label class="toggle">
+        <input type="checkbox" id="save-memories" checked />
+        <span>Save memories first (sleep cycle)</span>
+      </label>
+      <p id="modal-hint" class="modal-hint"></p>
+      <div class="modal-buttons">
+        <button id="modal-cancel">Cancel</button>
+        <button id="modal-confirm">Start new session</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

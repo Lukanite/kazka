@@ -6,6 +6,12 @@ const statusTx    = document.getElementById('status-text');
 const attachBtn   = document.getElementById('attach');
 const fileInput   = document.getElementById('file-input');
 const previewStrip = document.getElementById('preview-strip');
+const newSessionBtn = document.getElementById('new-session');
+const modalOverlay  = document.getElementById('modal-overlay');
+const saveMemoriesToggle = document.getElementById('save-memories');
+const modalHint     = document.getElementById('modal-hint');
+const modalCancel   = document.getElementById('modal-cancel');
+const modalConfirm  = document.getElementById('modal-confirm');
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -223,6 +229,14 @@ function appendError(text) {
   log.scrollTop = log.scrollHeight;
 }
 
+function appendNotice(text) {
+  const el = document.createElement('div');
+  el.className = 'msg notice';
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
 // ---------------------------------------------------------------------------
 // Tool call rendering
 // ---------------------------------------------------------------------------
@@ -406,6 +420,7 @@ function connect() {
     input.disabled = false;
     sendBtn.disabled = false;
     attachBtn.disabled = false;
+    newSessionBtn.disabled = false;
     input.focus();
     reconnectDelay = 1000;
   };
@@ -415,6 +430,8 @@ function connect() {
     input.disabled = true;
     sendBtn.disabled = true;
     attachBtn.disabled = true;
+    newSessionBtn.disabled = true;
+    closeModal();
     currentMsg = null;
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 15000);
@@ -493,12 +510,27 @@ function connect() {
         thinkingText = '';
       }
 
+    } else if (msg.type === 'saving') {
+      // A sleep cycle is underway — show the saving state and lock input.
+      setStatus('processing', 'Saving memories…');
+      document.body.classList.add('sleeping');
+      input.disabled = true;
+      sendBtn.disabled = true;
+
     } else if (msg.type === 'clear') {
       log.innerHTML = '';
       currentMsg = null;
       lastUserEl = null;
       thinkingText = '';
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+      // Fresh session is live — leave the saving state and report the outcome.
+      document.body.classList.remove('sleeping');
+      input.disabled = false;
+      sendBtn.disabled = false;
+      setStatus('connected', 'Ready');
+      appendNotice(msg.saved
+        ? '💤 Memories saved — fresh session'
+        : '🔄 Conversation reset');
 
     } else if (msg.type === 'undo_last') {
       // Remove messages from the end: assistant bubble(s), then user bubble
@@ -622,5 +654,44 @@ function send() {
 
 sendBtn.addEventListener('click', send);
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+// ---------------------------------------------------------------------------
+// New-session modal (sleep vs. reset)
+// ---------------------------------------------------------------------------
+
+function updateModalHint() {
+  modalHint.textContent = saveMemoriesToggle.checked
+    ? 'Memories from this conversation are saved before clearing.'
+    : 'This conversation is discarded — no memories are saved.';
+}
+
+function openModal() {
+  saveMemoriesToggle.checked = true;   // default to the safe option each time
+  updateModalHint();
+  modalOverlay.classList.remove('hidden');
+  modalConfirm.focus();
+}
+
+function closeModal() {
+  modalOverlay.classList.add('hidden');
+}
+
+function confirmNewSession() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const action = saveMemoriesToggle.checked ? 'sleep' : 'reset';
+    ws.send(JSON.stringify({ type: 'control', action }));
+  }
+  closeModal();
+}
+
+newSessionBtn.addEventListener('click', openModal);
+modalCancel.addEventListener('click', closeModal);
+modalConfirm.addEventListener('click', confirmNewSession);
+saveMemoriesToggle.addEventListener('change', updateModalHint);
+// Dismiss on backdrop click or Escape
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal();
+});
 
 connect();

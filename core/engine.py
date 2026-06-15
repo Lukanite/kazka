@@ -18,6 +18,7 @@ from core.requests import (
     BroadcastOutputRequest,
     ShutdownRequest,
     SleepRequest,
+    ResetRequest,
     UndoTurnRequest
 )
 from core.llm_interface import LLMInterface, ConversationManager
@@ -110,6 +111,22 @@ class AssistantEngine:
         Thread-safe - can be called from any thread.
         """
         self.request_queue.put(UndoTurnRequest())
+
+    def sleep(self):
+        """
+        Trigger a sleep cycle: flush memories + reset conversation (async).
+        Thread-safe - can be called from any thread.
+        """
+        self.request_queue.put(SleepRequest())
+
+    def reset_conversation(self):
+        """
+        Reset the conversation without forming memories (async).
+        Discards the current session and reloads last-saved disk state —
+        like Ctrl-C + restart, but without quitting.
+        Thread-safe - can be called from any thread.
+        """
+        self.request_queue.put(ResetRequest())
 
     def endpoint_send(self, target: str, endpoint: str, data: Optional[Dict] = None):
         """
@@ -259,6 +276,11 @@ class AssistantEngine:
         """
         print("🎙️  Engine thread started!")
         self.running = True
+
+        # Announce the initial fresh session. Fired here on the engine thread
+        # rather than in startup() (which runs on the main thread) so it honors
+        # the contract that service hooks fire on the engine thread.
+        self._notify_service_plugins("on_session_ready")
 
         while self.running:
             try:
@@ -586,6 +608,10 @@ class AssistantEngine:
         """
         print("😴 Sleep cycle starting...")
 
+        # Signal sleep start before the slow memory-formation step, so UIs can
+        # show a "saving" state for its duration.
+        self._notify_service_plugins("on_sleep_start")
+
         try:
             # 1. Save conversation log to .jsonl, notify plugins, then process memories
             if self.memory_manager:
@@ -595,21 +621,8 @@ class AssistantEngine:
                     self._notify_service_plugins("on_conversation_log_saved", log_path)
                 self.memory_manager.process_and_save(history)
 
-            # 2. Clear conversation history (the LLM message list)
-            self.conversation_manager.clear_history()
-
-            # 3. Reset system prompt to clean base (avoid double-injection)
-            resume_history = self.memory_manager.get_resume_history(config.memory.resume_history_count)
-            self.llm_interface.system_prompt = config.assistant.get_system_prompt(resume_history=resume_history)
-
-            # 4. Re-initialize memory (loads saved memories, injects into prompt)
-            self._initialize_memory()
-
-            # 5. Re-warm LLM cache with new prompt
-            self._warmup_llm_cache()
-
-            # 6. Notify service plugins that sleep is complete
-            self._notify_service_plugins("on_sleep_complete")
+            # 2. Clear history, rebuild prompt from the now-updated memory bank.
+            self._rebuild_fresh_context()
 
             print("😴 Sleep cycle complete. Conversation reset with fresh memories.")
 
@@ -617,6 +630,66 @@ class AssistantEngine:
             print(f"❌ Error during sleep cycle: {e}")
             import traceback
             traceback.print_exc()
+
+    def _reset_internal(self):
+        """
+        Reset the conversation without forming memories.
+
+        Like Ctrl-C + restart, but without quitting: discard the current
+        session (no log saved, no memories formed) and reload the last-saved
+        memory bank from disk into a clean conversation.
+
+        Called by engine thread only (via ResetRequest).
+        """
+        print("🔄 Resetting conversation (discarding current session)...")
+
+        try:
+            # Clear history and rebuild prompt from the last-saved memory bank.
+            # No save_conversation_log / process_and_save — the session is discarded.
+            self._rebuild_fresh_context()
+
+            print("🔄 Conversation reset. Reloaded last-saved memories.")
+
+        except Exception as e:
+            print(f"❌ Error during conversation reset: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _rebuild_fresh_context(self):
+        """
+        Clear conversation history and rebuild the system prompt from the
+        memory bank on disk. Shared by sleep and reset.
+
+        Caller is responsible for any memory formation/log saving BEFORE
+        calling this. Fires on_session_ready once the fresh context is live.
+        """
+        # Clear conversation history (the LLM message list)
+        self.conversation_manager.clear_history()
+
+        # Reset system prompt to clean base (avoid double-injection)
+        resume_history = self.memory_manager.get_resume_history(config.memory.resume_history_count)
+        self.llm_interface.system_prompt = config.assistant.get_system_prompt(resume_history=resume_history)
+
+        # Re-initialize memory (loads saved memories, injects into prompt)
+        self._initialize_memory()
+
+        # Re-warm LLM cache with new prompt
+        self._warmup_llm_cache()
+
+        # Announce that the fresh session is live.
+        self._notify_service_plugins("on_session_ready")
+
+    def _on_sleep_endpoint(self, data: Dict) -> Dict:
+        """Endpoint handler: trigger a sleep cycle. Runs on engine thread,
+        so dispatch directly rather than re-queueing."""
+        self._sleep_internal()
+        return {'status': 'ok'}
+
+    def _on_reset_endpoint(self, data: Dict) -> Dict:
+        """Endpoint handler: reset the conversation. Runs on engine thread,
+        so dispatch directly rather than re-queueing."""
+        self._reset_internal()
+        return {'status': 'ok'}
 
     def _undo_turn_internal(self):
         """
@@ -719,6 +792,11 @@ class AssistantEngine:
         # Start engine thread FIRST so it can process endpoint registrations
         self.engine_thread = threading.Thread(target=self.run, daemon=False, name="EngineThread")
         self.engine_thread.start()
+
+        # Expose engine-level controls so any input (keyboard, button, web, or
+        # an LLM tool) can trigger them via the same endpoint mechanism.
+        self.register_endpoint("engine", "sleep", self._on_sleep_endpoint)
+        self.register_endpoint("engine", "reset", self._on_reset_endpoint)
 
         # Start all plugins (they submit endpoint registrations to queue)
         for name, plugin in self.input_plugins.items():

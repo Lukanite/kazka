@@ -99,8 +99,9 @@ class SleepWatchdogPlugin(ServicePlugin):
             self._timer.daemon = True
             self._timer.start()
 
-    def on_sleep_complete(self):
-        """Reset state after a sleep cycle completes."""
+    def on_session_ready(self):
+        """Reset per-session state when a fresh context goes live (startup,
+        sleep, or reset)."""
         with self._lock:
             self._sleep_pending = False
             self._exchange_count = 0

@@ -160,6 +160,25 @@ class SleepRequest(EngineRequest):
 
 
 @dataclass
+class ResetRequest(EngineRequest):
+    """
+    Request to reset the conversation without forming memories.
+
+    Like Ctrl-C + restart, but without quitting the process:
+    1. Clear conversation history (current session is discarded)
+    2. Rebuild system prompt from last-saved memory bank on disk
+
+    Unlike SleepRequest, this does NOT save a conversation log or form
+    new memories — the current session is thrown away.
+    """
+
+    def execute(self, engine: 'AssistantEngine') -> None:
+        """Perform conversation reset."""
+        engine._reset_internal()
+        return None
+
+
+@dataclass
 class UndoTurnRequest(EngineRequest):
     """
     Request to undo the last conversation turn.

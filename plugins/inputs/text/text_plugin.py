@@ -4,6 +4,8 @@ Text Input Plugin - Keyboard/stdin text input.
 Provides text input mode via keyboard:
 - Press 't' to enter text input mode
 - Type message and press Enter to send
+- Press 's' to trigger a sleep cycle (memory flush + reset)
+- Press 'r' to reset the conversation (discard session, no memory save)
 - Press 'q' for graceful shutdown
 
 Cross-platform support for Windows (msvcrt) and Unix (termios).
@@ -23,6 +25,9 @@ class TextInputPlugin(InputPlugin):
 
     Provides a keyboard listener that:
     - 't': Enter text input mode (type message, Enter to send)
+    - 's': Trigger a sleep cycle (memory flush + conversation reset)
+    - 'r': Reset the conversation (discard session, no memory save)
+    - 'u': Undo the last turn
     - 'q': Trigger graceful shutdown
     - 'p': Push-to-talk toggle (sends to voice plugin)
 
@@ -49,6 +54,8 @@ class TextInputPlugin(InputPlugin):
         self.text_key = self.plugin_config.get('text_key', 't')
         self.undo_key = self.plugin_config.get('undo_key', 'u')
         self.debug_key = self.plugin_config.get('debug_key', 'd')
+        self.sleep_key = self.plugin_config.get('sleep_key', 's')
+        self.reset_key = self.plugin_config.get('reset_key', 'r')
 
         # State
         self.running = False
@@ -63,7 +70,9 @@ class TextInputPlugin(InputPlugin):
     def start(self):
         """Start text input plugin and keyboard listener."""
         print(f"⌨️  Starting text input plugin...")
-        print(f"   Keys: '{self.text_key}'=text input, '{self.undo_key}'=undo last, '{self.ptt_key}'=PTT, '{self.quit_key}'=quit")
+        print(f"   Keys: '{self.text_key}'=text input, '{self.undo_key}'=undo last, "
+              f"'{self.sleep_key}'=sleep cycle, '{self.reset_key}'=reset convo, "
+              f"'{self.ptt_key}'=PTT, '{self.quit_key}'=quit")
         self.running = True
 
         # Register endpoint for programmatic text input
@@ -161,6 +170,14 @@ class TextInputPlugin(InputPlugin):
                     print(f"\n'{self.undo_key}' pressed: undoing last turn")
                     self.engine.undo_turn()
 
+                elif ch == self.sleep_key:
+                    print(f"\n'{self.sleep_key}' pressed: triggering sleep cycle")
+                    self.engine.sleep()
+
+                elif ch == self.reset_key:
+                    print(f"\n'{self.reset_key}' pressed: resetting conversation")
+                    self.engine.reset_conversation()
+
                 elif ch == self.text_key:
                     self._handle_text_input_windows()
 
@@ -244,6 +261,14 @@ class TextInputPlugin(InputPlugin):
                     elif ch == self.undo_key:
                         print(f"\n'{self.undo_key}' pressed: undoing last turn")
                         self.engine.undo_turn()
+
+                    elif ch == self.sleep_key:
+                        print(f"\n'{self.sleep_key}' pressed: triggering sleep cycle")
+                        self.engine.sleep()
+
+                    elif ch == self.reset_key:
+                        print(f"\n'{self.reset_key}' pressed: resetting conversation")
+                        self.engine.reset_conversation()
 
                     elif ch == self.text_key:
                         self._handle_text_input_unix(fd, old_settings)

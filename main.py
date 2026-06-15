@@ -91,6 +91,7 @@ def main():
     print()
     print("-" * 60)
     print("Ready! Say the wake word or press 't' to type a message.")
+    print("Press 's' to sleep (memory flush), 'r' to reset the conversation.")
     print("Press 'q' to quit, Ctrl-C for emergency shutdown.")
     print("-" * 60)
     print()

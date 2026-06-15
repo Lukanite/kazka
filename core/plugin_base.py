@@ -462,11 +462,22 @@ class ServicePlugin(ABC):
         """
         pass
 
-    def on_sleep_complete(self):
+    def on_sleep_start(self):
         """
-        Called on the engine thread after a sleep cycle completes.
+        Called on the engine thread at the start of a sleep cycle, before
+        memories are formed and saved.
 
-        Override to reset state after sleep. Default: no-op.
+        Override to react to sleep beginning, e.g. show a "saving memories"
+        indicator that closes when on_session_ready() fires. Default: no-op.
+        """
+        pass
+
+    def on_session_ready(self):
+        """
+        Called on the engine thread when a fresh conversation context becomes
+        live: once at startup, and after every sleep or reset.
+
+        Override to reset per-session state. Default: no-op.
         """
         pass
 

@@ -30,6 +30,27 @@ header {
   0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
 }
 #status-text { font-size: 0.8rem; color: #888; }
+#new-session {
+  margin-left: auto;
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+#new-session:hover { background: #3a3a3a; color: #ddd; }
+#new-session:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Slow spin on the new-session icon while a sleep cycle saves memories */
+body.sleeping #new-session {
+  color: #ff9800;
+  animation: tool-spin 2s linear infinite;
+}
 #log {
   flex: 1;
   overflow-y: auto;
@@ -189,6 +210,14 @@ header {
   color: #888;
   font-size: 0.8rem;
   font-style: italic;
+  padding: 4px 12px;
+}
+.msg.notice {
+  align-self: center;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  color: #999;
+  font-size: 0.8rem;
   padding: 4px 12px;
 }
 /* Tool call pill */
@@ -385,3 +414,53 @@ footer {
 }
 #attach:hover { background: #3a3a3a; color: #ccc; }
 #attach:disabled { opacity: 0.4; cursor: not-allowed; }
+/* New-session modal */
+#modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+#modal-overlay.hidden { display: none; }
+#modal {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 20px 22px;
+  width: min(90%, 380px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#modal h2 { font-size: 1rem; color: #e0e0e0; }
+#modal p { font-size: 0.85rem; color: #888; }
+#modal .toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #cde;
+  cursor: pointer;
+}
+#modal .toggle input { width: 16px; height: 16px; cursor: pointer; }
+.modal-hint { font-size: 0.78rem; color: #777; min-height: 1.1em; }
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.modal-buttons button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+#modal-cancel { background: #3a3a3a; color: #aaa; }
+#modal-cancel:hover { background: #4a4a4a; color: #ddd; }
+#modal-confirm { background: #1e3a5f; color: #cde; }
+#modal-confirm:hover { background: #254f80; }
