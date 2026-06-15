@@ -679,18 +679,6 @@ class AssistantEngine:
         # Announce that the fresh session is live.
         self._notify_service_plugins("on_session_ready")
 
-    def _on_sleep_endpoint(self, data: Dict) -> Dict:
-        """Endpoint handler: trigger a sleep cycle. Runs on engine thread,
-        so dispatch directly rather than re-queueing."""
-        self._sleep_internal()
-        return {'status': 'ok'}
-
-    def _on_reset_endpoint(self, data: Dict) -> Dict:
-        """Endpoint handler: reset the conversation. Runs on engine thread,
-        so dispatch directly rather than re-queueing."""
-        self._reset_internal()
-        return {'status': 'ok'}
-
     def _undo_turn_internal(self):
         """
         Undo the last conversation turn (internal - called by engine thread only).
@@ -792,11 +780,6 @@ class AssistantEngine:
         # Start engine thread FIRST so it can process endpoint registrations
         self.engine_thread = threading.Thread(target=self.run, daemon=False, name="EngineThread")
         self.engine_thread.start()
-
-        # Expose engine-level controls so any input (keyboard, button, web, or
-        # an LLM tool) can trigger them via the same endpoint mechanism.
-        self.register_endpoint("engine", "sleep", self._on_sleep_endpoint)
-        self.register_endpoint("engine", "reset", self._on_reset_endpoint)
 
         # Start all plugins (they submit endpoint registrations to queue)
         for name, plugin in self.input_plugins.items():
