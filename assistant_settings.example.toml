@@ -63,6 +63,12 @@ api_type = "openai"
 # api_key = ""            # Set your OpenRouter key here, or use LLM_API_KEY env var
 # api_type = "openai"
 
+# --- Optional: provider-specific passthrough params ---
+# Keys under [network.extra_body] are merged verbatim into the LLM request body.
+# Use this for provider-specific parameters not covered by other settings.
+# [network.extra_body]
+# reasoning = { effort = "high" }  # Reasoning effort for o-series models (OpenAI / OpenRouter)
+
 
 [audio_devices]
 input_device_name = "Microphone"    # Partial name match — check with --list-devices

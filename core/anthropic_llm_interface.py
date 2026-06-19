@@ -212,6 +212,10 @@ class AnthropicLLMInterface(LLMInterface):
                 "budget_tokens": 8192
             }
 
+        # Merge user-supplied passthrough params last so they can override defaults
+        if config.network.extra_body:
+            payload.update(config.network.extra_body)
+
         return payload
 
 

@@ -5,7 +5,7 @@ Loads settings from assistant_settings.toml file for easy configuration manageme
 
 import tomllib
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any
 
 
@@ -142,6 +142,8 @@ class NetworkConfig:
     enable_cache_warming: bool = True  # Warm up LLM prompt cache on startup
     # Streaming settings
     enable_streaming: bool = True  # Enable streaming LLM responses for real-time console output
+    # Arbitrary params merged verbatim into the LLM request body (provider-specific passthrough)
+    extra_body: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -499,6 +501,8 @@ class Config:
         lines.append(f'api_type = {v(n.api_type)}')
         lines.append(f'enable_cache_warming = {v(n.enable_cache_warming)}')
         lines.append(f'enable_streaming = {v(n.enable_streaming)}')
+        if n.extra_body:
+            lines.append(self._dict_to_toml_section({"extra_body": n.extra_body}, "network"))
 
         lines.append("\n[audio_devices]")
         lines.append(f'input_device_name = {v(ad.input_device_name)}')
