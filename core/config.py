@@ -5,7 +5,7 @@ Loads settings from assistant_settings.toml file for easy configuration manageme
 
 import tomllib
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any
 
 
@@ -143,12 +143,7 @@ class NetworkConfig:
     # Streaming settings
     enable_streaming: bool = True  # Enable streaming LLM responses for real-time console output
     # Arbitrary params merged verbatim into the LLM request body (provider-specific passthrough)
-    extra_body: dict = None
-
-    def __post_init__(self):
-        """Initialize default values for mutable fields."""
-        if self.extra_body is None:
-            self.extra_body = {}
+    extra_body: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -401,11 +396,7 @@ class Config:
 
             # Load each configuration section
             if 'network' in data:
-                network_data = data['network'].copy()
-                # Handle extra_body separately to preserve nested structure
-                extra_body = network_data.pop('extra_body', {})
-                self._update_dataclass(self.network, network_data)
-                self.network.extra_body = extra_body
+                self._update_dataclass(self.network, data['network'])
             if 'audio_devices' in data:
                 self._update_dataclass(self.audio_devices, data['audio_devices'])
             if 'wake_word' in data:

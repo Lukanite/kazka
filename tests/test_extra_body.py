@@ -27,11 +27,6 @@ class TestNetworkConfigExtraBodyDefault(unittest.TestCase):
         self.assertEqual(cfg.extra_body, {})
         self.assertIsInstance(cfg.extra_body, dict)
 
-    def test_none_becomes_empty_dict(self):
-        """Passing None explicitly should also yield {}."""
-        cfg = NetworkConfig(extra_body=None)
-        self.assertEqual(cfg.extra_body, {})
-
     def test_instances_are_independent(self):
         """Each instance should get its own dict, not share a mutable default."""
         cfg1 = NetworkConfig()
