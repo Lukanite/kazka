@@ -142,6 +142,13 @@ class NetworkConfig:
     enable_cache_warming: bool = True  # Warm up LLM prompt cache on startup
     # Streaming settings
     enable_streaming: bool = True  # Enable streaming LLM responses for real-time console output
+    # Arbitrary params merged verbatim into the LLM request body (provider-specific passthrough)
+    extra_body: dict = None
+
+    def __post_init__(self):
+        """Initialize default values for mutable fields."""
+        if self.extra_body is None:
+            self.extra_body = {}
 
 
 @dataclass
@@ -394,7 +401,11 @@ class Config:
 
             # Load each configuration section
             if 'network' in data:
-                self._update_dataclass(self.network, data['network'])
+                network_data = data['network'].copy()
+                # Handle extra_body separately to preserve nested structure
+                extra_body = network_data.pop('extra_body', {})
+                self._update_dataclass(self.network, network_data)
+                self.network.extra_body = extra_body
             if 'audio_devices' in data:
                 self._update_dataclass(self.audio_devices, data['audio_devices'])
             if 'wake_word' in data:
@@ -499,6 +510,8 @@ class Config:
         lines.append(f'api_type = {v(n.api_type)}')
         lines.append(f'enable_cache_warming = {v(n.enable_cache_warming)}')
         lines.append(f'enable_streaming = {v(n.enable_streaming)}')
+        if n.extra_body:
+            lines.append(self._dict_to_toml_section({"extra_body": n.extra_body}, "network"))
 
         lines.append("\n[audio_devices]")
         lines.append(f'input_device_name = {v(ad.input_device_name)}')

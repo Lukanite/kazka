@@ -218,6 +218,10 @@ class LLMInterface:
         if config.assistant.enable_thinking_mode:
             payload["chat_template_kwargs"] = {"enable_thinking": True}
 
+        # Merge user-supplied passthrough params last so they can override defaults
+        if config.network.extra_body:
+            payload.update(config.network.extra_body)
+
         return payload
 
     def _make_request(self, payload: Dict[str, Any]) -> requests.Response:
