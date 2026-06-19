@@ -5,7 +5,9 @@ Allows control of Matter-enabled lights via python-matter-server.
 
 from typing import Dict, Any, Optional
 import asyncio
+import concurrent.futures
 import json
+import threading
 
 try:
     import websockets
@@ -18,53 +20,146 @@ from core.tool_manager import Tool
 
 
 class MatterClient:
-    """Simple Matter server client for sending commands."""
-    
+    """Matter server client with a persistent, reused WebSocket connection.
+
+    A single WebSocket connection is lazily established on first use and
+    reused across all commands.  Responses are correlated to requests by
+    ``message_id`` so that unsolicited event frames pushed by the server
+    do not corrupt the request/response flow.
+    """
+
+    # Extra seconds added on top of self.timeout for the synchronous
+    # future.result() call to allow the async coroutine to finish cleanly
+    # (e.g. to return a "Connection timeout" error dict) before the sync
+    # side gives up and returns its own timeout error.
+    _SYNC_OVERHEAD: float = 5.0
+
     def __init__(self, host: str = "charmander.localdomain", port: int = 5580, timeout: float = 10.0):
         self.uri = f"ws://{host}:{port}/ws"
         self.timeout = timeout
         self._msg_id = 0
-    
+        self._msg_id_lock = threading.Lock()
+        # Persistent WebSocket owned by the background event loop.
+        self._ws = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread: Optional[threading.Thread] = None
+        self._loop_lock = threading.Lock()
+        # Serialises concurrent send_command calls from different threads.
+        self._cmd_lock = threading.Lock()
+
     def _next_msg_id(self) -> str:
-        self._msg_id += 1
-        return str(self._msg_id)
-    
-    async def _send_command(self, command: str, args: Optional[Dict] = None) -> Dict[str, Any]:
-        """Send a command to the Matter server and return the response."""
+        with self._msg_id_lock:
+            self._msg_id += 1
+            return str(self._msg_id)
+
+    def _get_loop(self) -> asyncio.AbstractEventLoop:
+        """Return the persistent background event loop, starting it if needed."""
+        with self._loop_lock:
+            if self._loop is None or not self._loop.is_running():
+                loop = asyncio.new_event_loop()
+                t = threading.Thread(
+                    target=loop.run_forever,
+                    daemon=True,
+                    name="matter-ws-loop",
+                )
+                t.start()
+                self._loop = loop
+                self._loop_thread = t
+        return self._loop
+
+    async def _ensure_connected(self) -> None:
+        """Establish (or re-establish) the WebSocket connection if needed.
+
+        The first frame received after connecting is the server-info /
+        handshake message; it is consumed here so callers never see it.
+        """
+        if self._ws is not None and not self._ws.closed:
+            return
+        self._ws = await asyncio.wait_for(
+            websockets.connect(self.uri), timeout=self.timeout
+        )
+        # Consume the one-time server-info handshake frame.
+        await asyncio.wait_for(self._ws.recv(), timeout=self.timeout)
+
+    async def _do_command(
+        self, command: str, args: Optional[Dict], msg_id: str
+    ) -> Dict[str, Any]:
+        """Send a command and read frames until the one with matching
+        ``message_id`` arrives.  Unsolicited event frames are discarded.
+
+        The entire receive loop is bounded by a single ``self.timeout``
+        deadline so continuous unsolicited traffic cannot cause indefinite
+        spinning.
+        """
+        message: Dict[str, Any] = {"message_id": msg_id, "command": command}
+        if args:
+            message["args"] = args
+        await self._ws.send(json.dumps(message))
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self.timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=remaining)
+            frame = json.loads(raw)
+            if frame.get("message_id") == msg_id:
+                return frame
+            # Unsolicited event / subscription message — skip and keep reading.
+
+    async def _send_command_async(
+        self, command: str, args: Optional[Dict]
+    ) -> Dict[str, Any]:
+        """Core async implementation with one transparent retry on connection drop."""
+        msg_id = self._next_msg_id()
+
+        # First attempt.
         try:
-            async with websockets.connect(self.uri) as ws:
-                # Consume server info message
-                await asyncio.wait_for(ws.recv(), timeout=self.timeout)
-                
-                message = {
-                    "message_id": self._next_msg_id(),
-                    "command": command,
-                }
-                if args:
-                    message["args"] = args
-                
-                await ws.send(json.dumps(message))
-                response = await asyncio.wait_for(ws.recv(), timeout=self.timeout)
-                return json.loads(response)
+            await self._ensure_connected()
+            return await self._do_command(command, args, msg_id)
+        except asyncio.TimeoutError:
+            return {"error": "Connection timeout"}
+        except ConnectionRefusedError:
+            return {"error": "Could not connect to Matter server"}
+        except Exception:
+            # Connection may have dropped — clear it and retry once.
+            self._ws = None
+
+        # Retry after reconnect.
+        try:
+            await self._ensure_connected()
+            return await self._do_command(command, args, msg_id)
         except asyncio.TimeoutError:
             return {"error": "Connection timeout"}
         except ConnectionRefusedError:
             return {"error": "Could not connect to Matter server"}
         except Exception as e:
             return {"error": str(e)}
-    
+
     def send_command(self, command: str, args: Optional[Dict] = None) -> Dict[str, Any]:
-        """Synchronous wrapper for sending commands."""
-        # Use asyncio.run() to create a new event loop - works in any thread
-        return asyncio.run(self._send_command(command, args))
-    
+        """Send a command synchronously.  Thread-safe; may be called from any thread."""
+        if not WEBSOCKETS_AVAILABLE:
+            return {"error": "websockets library not installed"}
+
+        with self._cmd_lock:
+            loop = self._get_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self._send_command_async(command, args), loop
+            )
+            try:
+                return future.result(timeout=self.timeout + self._SYNC_OVERHEAD)
+            except concurrent.futures.TimeoutError:
+                return {"error": "Connection timeout"}
+            except Exception as e:
+                return {"error": str(e)}
+
     def device_command(
         self,
         node_id: int,
         endpoint_id: int,
         cluster_id: int,
         command_name: str,
-        payload: Optional[Dict] = None
+        payload: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Send a device command."""
         return self.send_command("device_command", {
@@ -74,10 +169,35 @@ class MatterClient:
             "command_name": command_name,
             "payload": payload or {},
         })
-    
+
     def get_nodes(self) -> Dict[str, Any]:
         """Get all commissioned nodes."""
         return self.send_command("get_nodes")
+
+    def close(self) -> None:
+        """Close the persistent WebSocket connection and stop the background loop."""
+        with self._loop_lock:
+            loop = self._loop
+            ws = self._ws
+
+        if loop is not None and loop.is_running():
+            async def _close_ws() -> None:
+                if ws is not None and not ws.closed:
+                    await ws.close()
+
+            try:
+                asyncio.run_coroutine_threadsafe(_close_ws(), loop).result(timeout=5.0)
+            except Exception:
+                pass
+            loop.call_soon_threadsafe(loop.stop)
+
+        if self._loop_thread is not None:
+            self._loop_thread.join(timeout=5.0)
+
+        self._ws = None
+        with self._loop_lock:
+            self._loop = None
+            self._loop_thread = None
 
 
 class MatterLightControlTool(Tool):
