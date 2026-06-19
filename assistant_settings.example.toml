@@ -66,11 +66,8 @@ api_type = "openai"
 # --- Optional: provider-specific passthrough params ---
 # Keys under [network.extra_body] are merged verbatim into the LLM request body.
 # Use this for provider-specific parameters not covered by other settings.
-# Examples (uncomment and adjust for your provider):
 # [network.extra_body]
-# reasoning_effort = "high"        # OpenRouter reasoning effort (o-series models)
-# [network.extra_body.reasoning]
-# effort = "medium"                 # OpenAI reasoning effort (o-series models)
+# reasoning = { effort = "high" }  # Reasoning effort for o-series models (OpenAI / OpenRouter)
 
 
 [audio_devices]
