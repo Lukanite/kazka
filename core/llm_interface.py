@@ -305,9 +305,11 @@ class LLMInterface:
                 if 'content' in message:
                     result['content'] = message['content']
 
-                # Extract reasoning/thinking content if present
-                if 'reasoning_content' in message and message['reasoning_content']:
-                    result['reasoning_content'] = message['reasoning_content']
+                # Extract reasoning/thinking content if present.
+                # OpenRouter uses 'reasoning'; vLLM/DeepSeek-style servers use 'reasoning_content'.
+                reasoning = message.get('reasoning_content') or message.get('reasoning')
+                if reasoning:
+                    result['reasoning_content'] = reasoning
 
                 # Check for tool calls
                 if 'tool_calls' in message and message['tool_calls']:
@@ -322,8 +324,11 @@ class LLMInterface:
                 if 'content' in message:
                     result['content'] = message['content']
 
-                if 'reasoning_content' in message and message['reasoning_content']:
-                    result['reasoning_content'] = message['reasoning_content']
+                # Extract reasoning/thinking content if present.
+                # OpenRouter uses 'reasoning'; vLLM/DeepSeek-style servers use 'reasoning_content'.
+                reasoning = message.get('reasoning_content') or message.get('reasoning')
+                if reasoning:
+                    result['reasoning_content'] = reasoning
 
                 if 'tool_calls' in message and message['tool_calls']:
                     result['tool_calls'] = message['tool_calls']
@@ -446,9 +451,11 @@ class LLMInterface:
                         choice = data['choices'][0]
                         delta = choice.get('delta', {})
 
-                        # Handle thinking/reasoning chunks
-                        if 'reasoning_content' in delta and delta['reasoning_content']:
-                            yield ThinkingChunk(content=delta['reasoning_content'])
+                        # Handle thinking/reasoning chunks.
+                        # OpenRouter streams 'reasoning'; others use 'reasoning_content'.
+                        reasoning_delta = delta.get('reasoning_content') or delta.get('reasoning')
+                        if reasoning_delta:
+                            yield ThinkingChunk(content=reasoning_delta)
 
                         # Handle content chunks
                         if 'content' in delta and delta['content']:

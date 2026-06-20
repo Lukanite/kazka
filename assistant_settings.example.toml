@@ -67,7 +67,8 @@ api_type = "openai"
 # Keys under [network.extra_body] are merged verbatim into the LLM request body.
 # Use this for provider-specific parameters not covered by other settings.
 # [network.extra_body]
-# reasoning = { effort = "high" }  # Reasoning effort for o-series models (OpenAI / OpenRouter)
+# reasoning = { effort = "high" }  # Request reasoning/thinking output (OpenRouter o-series and similar).
+#                                   # Use reasoning = { max_tokens = 2000 } for Anthropic-style models via OpenRouter.
 
 
 [audio_devices]
