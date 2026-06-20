@@ -90,6 +90,17 @@ Supports both OpenAI-compatible APIs (OpenAI, Ollama, vLLM, OpenRouter, etc.) an
 
 To switch providers, comment/uncomment the relevant block in `assistant_settings.toml` — pre-written blocks for local Ollama, vLLM/LM Studio, Anthropic, and OpenRouter are included.
 
+> **Thinking blocks via OpenRouter:** OpenRouter only returns reasoning tokens when the request explicitly asks for them. To surface thinking blocks when using OpenRouter with a reasoning-capable model, add the following to your `assistant_settings.toml`:
+> ```toml
+> [network.extra_body]
+> reasoning = { effort = "high" }
+> ```
+> For Anthropic-style models routed through OpenRouter (e.g. Claude), use a token budget instead:
+> ```toml
+> [network.extra_body]
+> reasoning = { max_tokens = 2000 }
+> ```
+
 ### Wake Word
 
 ```toml
