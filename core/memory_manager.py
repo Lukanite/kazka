@@ -768,7 +768,10 @@ class MemoryManager:
             timestamp: ISO format timestamp string
 
         Returns:
-            Human-readable relative time (e.g., "today", "2 days ago", "last week")
+            Bare, human-readable relative time with no surrounding punctuation
+            (e.g., "2 days ago", "last week"). Empty string for same-day or
+            unparseable timestamps; callers supply their own wording for that
+            case (e.g. "less than a day ago").
         """
         try:
             # Parse the timestamp
@@ -787,21 +790,21 @@ class MemoryManager:
 
             # Return appropriate string
             if days == 0:
-                return ""  # Today, don't add label
+                return ""  # Same day; caller supplies its own wording
             elif days == 1:
-                return "(yesterday)"
+                return "yesterday"
             elif days < 7:
-                return f"({days} days ago)"
+                return f"{days} days ago"
             elif days < 14:
-                return "(last week)"
+                return "last week"
             elif days < 30:
                 weeks = days // 7
-                return f"({weeks} week{'s' if weeks > 1 else ''} ago)"
+                return f"{weeks} week{'s' if weeks > 1 else ''} ago"
             elif days < 60:
-                return "(last month)"
+                return "last month"
             else:
                 months = days // 30
-                return f"({months} month{'s' if months > 1 else ''} ago)"
+                return f"{months} month{'s' if months > 1 else ''} ago"
 
         except Exception as e:
             # If we can't parse the timestamp, return empty string
@@ -881,12 +884,10 @@ class MemoryManager:
                 reverse=True
             )
             for i, memory in enumerate(sorted_conversations):
-                # Add relative time context as a header for older conversations
-                relative_time = self._get_relative_time(memory.timestamp)
-                if relative_time:
-                    memory_context += f"{relative_time}:\n"
-                else:
-                    memory_context += "Conversation:\n"
+                # Uniform header that always qualifies the conversation with when
+                # it happened; same-day conversations get an explicit phrasing.
+                relative_time = self._get_relative_time(memory.timestamp) or "less than a day ago"
+                memory_context += f"Conversation ({relative_time}):\n"
                 for line in memory.content.splitlines():
                     if line:
                         memory_context += f"  {line}\n"
