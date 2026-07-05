@@ -74,10 +74,17 @@ class WebOutputPlugin(OutputPlugin):
         """
         Non-streaming fallback: send the complete text as a single final chunk.
 
-        Called by the base class when output_chunk() is not overridden or when
-        a plugin directly calls output(). In practice, output_chunk() handles
-        all streaming responses, so this fires only in edge cases.
+        Routes thinking content to a 'thinking' message so the web UI renders it
+        in a collapsible block rather than as a normal assistant message,
+        matching the behaviour of output_chunk() in streaming mode.
         """
+        if metadata.get('is_thinking', False):
+            self._server.broadcast({
+                "type": "thinking",
+                "text": text,
+            })
+            return
+
         self._server.broadcast({
             "type": "chunk",
             "text": text,

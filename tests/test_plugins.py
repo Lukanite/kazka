@@ -9,11 +9,24 @@ from queue import Queue
 
 import sys
 import os
+import types
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.engine import AssistantEngine
 from core.plugin_base import InputPlugin, OutputPlugin, QueuedOutputPlugin
 from plugins.outputs.console import ConsoleOutputPlugin
+
+mock_web_server_module = types.ModuleType("plugins.shared.web_server")
+
+
+class _TestWebServer:
+    pass
+
+
+mock_web_server_module.WebServer = _TestWebServer
+sys.modules.setdefault("plugins.shared.web_server", mock_web_server_module)
+
+from plugins.outputs.web_output_plugin import WebOutputPlugin
 
 
 class MockInputPlugin(InputPlugin):
@@ -71,6 +84,16 @@ class MockQueuedOutputPlugin(QueuedOutputPlugin):
 
     def stop_internal(self):
         pass
+
+
+class MockWebServer:
+    """Mock web server for testing broadcast output."""
+
+    def __init__(self):
+        self.messages = []
+
+    def broadcast(self, message):
+        self.messages.append(message)
 
 
 class TestPluginBase(unittest.TestCase):
@@ -323,6 +346,45 @@ class TestConsoleOutputPlugin(unittest.TestCase):
         self.assertTrue(plugin.should_handle({'source': 'VAD'}))
         self.assertTrue(plugin.should_handle({'source': 'TEXT'}))
         self.assertTrue(plugin.should_handle({}))
+
+
+class TestWebOutputPlugin(unittest.TestCase):
+    """Test web output plugin."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.engine = AssistantEngine()
+        self.server = MockWebServer()
+        self.plugin = WebOutputPlugin(self.engine, self.server)
+
+    def test_web_plugin_output_routes_thinking_messages(self):
+        """Test non-streaming thinking output is sent as a thinking message."""
+        self.plugin.output("Reasoning text", {"is_thinking": True, "source": "TEXT"})
+
+        self.assertEqual(self.server.messages, [{
+            "type": "thinking",
+            "text": "Reasoning text",
+        }])
+
+    def test_web_plugin_output_routes_normal_messages(self):
+        """Test non-streaming content output is sent as a final chunk."""
+        self.plugin.output("Assistant reply", {"source": "TEXT"})
+
+        self.assertEqual(self.server.messages, [{
+            "type": "chunk",
+            "text": "Assistant reply",
+            "is_final": True,
+            "source": "TEXT",
+        }])
+
+    def test_web_plugin_output_chunk_keeps_streaming_thinking_behavior(self):
+        """Test streaming thinking output remains unchanged."""
+        self.plugin.output_chunk("Thinking chunk", {"is_thinking": True}, is_final=False)
+
+        self.assertEqual(self.server.messages, [{
+            "type": "thinking",
+            "text": "Thinking chunk",
+        }])
 
 
 if __name__ == '__main__':

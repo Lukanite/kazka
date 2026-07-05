@@ -782,9 +782,12 @@ class ConversationManager:
             print(f"   ❌ Query error: {e}")
             import traceback
             traceback.print_exc()
+            # Yield as a non-final chunk so the following Complete() event closes
+            # the streaming buffer. Marking it is_final=True here would close the
+            # buffer prematurely, causing Complete() to emit a second empty message.
             yield ContentChunk(
                 content="I'm having trouble processing your request right now.",
-                is_final=True
+                is_final=False
             )
             yield Complete()
             return  # Exit generator to prevent infinite retry loop
