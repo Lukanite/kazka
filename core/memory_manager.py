@@ -876,7 +876,7 @@ class MemoryManager:
 
         # Section: Conversation history (chronological, most recent first)
         if categorized['conversation']:
-            memory_context += "\nCONVERSATION HISTORY (most recent first):\n"
+            memory_context += "\nNOTABLE CONVERSATIONS (most recent first):\n"
             # Sort by timestamp descending (newest first)
             sorted_conversations = sorted(
                 categorized['conversation'],
