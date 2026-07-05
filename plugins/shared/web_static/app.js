@@ -7,6 +7,7 @@ const attachBtn   = document.getElementById('attach');
 const fileInput   = document.getElementById('file-input');
 const previewStrip = document.getElementById('preview-strip');
 const newSessionBtn = document.getElementById('new-session');
+const undoBtn       = document.getElementById('undo');
 const modalOverlay  = document.getElementById('modal-overlay');
 const saveMemoriesToggle = document.getElementById('save-memories');
 const modalHint     = document.getElementById('modal-hint');
@@ -421,6 +422,7 @@ function connect() {
     sendBtn.disabled = false;
     attachBtn.disabled = false;
     newSessionBtn.disabled = false;
+    undoBtn.disabled = false;
     input.focus();
     reconnectDelay = 1000;
   };
@@ -431,6 +433,7 @@ function connect() {
     sendBtn.disabled = true;
     attachBtn.disabled = true;
     newSessionBtn.disabled = true;
+    undoBtn.disabled = true;
     closeModal();
     currentMsg = null;
     setTimeout(connect, reconnectDelay);
@@ -516,6 +519,7 @@ function connect() {
       document.body.classList.add('sleeping');
       input.disabled = true;
       sendBtn.disabled = true;
+      undoBtn.disabled = true;
 
     } else if (msg.type === 'clear') {
       log.innerHTML = '';
@@ -527,6 +531,7 @@ function connect() {
       document.body.classList.remove('sleeping');
       input.disabled = false;
       sendBtn.disabled = false;
+      undoBtn.disabled = false;
       setStatus('connected', 'Ready');
       appendNotice(msg.saved
         ? '💤 Memories saved — fresh session'
@@ -683,6 +688,13 @@ function confirmNewSession() {
   }
   closeModal();
 }
+
+undoBtn.addEventListener('click', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    // Server broadcasts undo_last, which removes the last exchange from the log.
+    ws.send(JSON.stringify({ type: 'control', action: 'undo' }));
+  }
+});
 
 newSessionBtn.addEventListener('click', openModal);
 modalCancel.addEventListener('click', closeModal);

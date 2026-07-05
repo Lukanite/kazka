@@ -30,8 +30,7 @@ header {
   0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
 }
 #status-text { font-size: 0.8rem; color: #888; }
-#new-session {
-  margin-left: auto;
+#new-session, #undo {
   background: #2a2a2a;
   color: #aaa;
   border: 1px solid #3a3a3a;
@@ -44,8 +43,11 @@ header {
   flex-shrink: 0;
   transition: background 0.2s, color 0.2s;
 }
-#new-session:hover { background: #3a3a3a; color: #ddd; }
-#new-session:disabled { opacity: 0.4; cursor: not-allowed; }
+/* First button of the header cluster absorbs the free space, pushing the
+   whole group to the right. */
+#undo { margin-left: auto; }
+#new-session:hover, #undo:hover { background: #3a3a3a; color: #ddd; }
+#new-session:disabled, #undo:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Slow spin on the new-session icon while a sleep cycle saves memories */
 body.sleeping #new-session {
   color: #ff9800;
@@ -67,6 +69,11 @@ body.sleeping #new-session {
   font-size: 0.95rem;
   white-space: pre-wrap;
   word-break: break-word;
+  /* #log is a column flexbox; keep messages at their natural height. Without
+     this, an item with overflow:hidden (.tool-call) gets an automatic min-size
+     of 0 and flex-shrink squishes it to a 0-height sliver once the log
+     overflows — the tool-call pills collapse to just their 1px border. */
+  flex-shrink: 0;
 }
 .msg.user {
   align-self: flex-end;

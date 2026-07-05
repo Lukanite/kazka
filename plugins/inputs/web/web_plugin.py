@@ -62,5 +62,9 @@ class WebInputPlugin(InputPlugin):
             self.engine.sleep()
         elif action == "reset":
             self.engine.reset_conversation()
+        elif action == "undo":
+            # Undo the last turn — engine fires on_undo, which broadcasts
+            # undo_last to all clients (same path the edit flow uses).
+            self.engine.undo_turn()
         else:
             print(f"⚠️  Ignoring unknown web control action: {action!r}")
